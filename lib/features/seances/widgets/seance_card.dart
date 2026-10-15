@@ -7,10 +7,14 @@ class SeanceCard extends StatelessWidget {
     super.key,
     required this.seance,
     required this.onReserve,
+    required this.onEdit,
+    required this.onDelete,
   });
 
   final Seance seance;
   final VoidCallback onReserve;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -47,6 +51,18 @@ class SeanceCard extends StatelessWidget {
               ),
               const Spacer(),
               _ModeBadge(online: seance.isOnline),
+              PopupMenuButton<String>(
+                padding: EdgeInsets.zero,
+                icon: const Icon(Icons.more_horiz_rounded, color: AppColors.muted),
+                onSelected: (value) {
+                  if (value == 'edit') onEdit();
+                  if (value == 'delete') onDelete();
+                },
+                itemBuilder: (context) => const [
+                  PopupMenuItem(value: 'edit', child: Text('Modifier')),
+                  PopupMenuItem(value: 'delete', child: Text('Supprimer')),
+                ],
+              ),
             ],
           ),
           const SizedBox(height: 10),

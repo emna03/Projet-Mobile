@@ -1,14 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:studymate/features/seances/models/seance.dart';
+import 'package:studymate/features/seances/seances_database.dart';
 
-/// In-memory list for the séances de révision screen.
-/// Other modules can later replace this with a shared backend.
+/// Séances de révision stored in SQLite through sqflite.
 class SeancesStore extends ChangeNotifier {
-  SeancesStore() : _items = List<Seance>.of(_samples);
+  SeancesStore({SeancesDatabase? database})
+      : _database = database ?? SeancesDatabase();
 
-  final List<Seance> _items;
+  final SeancesDatabase _database;
+  final List<Seance> _items = [];
   SessionFormat? _format;
+  bool _loading = true;
+  String? _error;
+  int _request = 0;
 
+  bool get loading => _loading;
+  String? get error => _error;
   SessionFormat? get format => _format;
 
   List<Seance> get items {
@@ -19,84 +26,91 @@ class SeancesStore extends ChangeNotifier {
     );
   }
 
+  Future<void> load() async {
+    final request = ++_request;
+    try {
+      final rows = await _database.readAll();
+      if (request != _request) return;
+      _items
+        ..clear()
+        ..addAll(rows);
+      _error = null;
+    } catch (error) {
+      if (request != _request) return;
+      _error = '$error';
+    } finally {
+      if (request == _request) {
+        _loading = false;
+        notifyListeners();
+      }
+    }
+  }
+
   void setFormat(SessionFormat? format) {
     if (_format == format) return;
     _format = format;
     notifyListeners();
   }
 
-  void toggleReservation(String id) {
+  Future<void> toggleReservation(String id) async {
     final index = _items.indexWhere((seance) => seance.id == id);
     if (index == -1) return;
     final current = _items[index];
+    late final Seance next;
     if (current.reserved) {
-      _items[index] = current.copyWith(
+      next = current.copyWith(
         reserved: false,
         seatsLeft: current.seatsLeft + 1,
       );
     } else if (current.seatsLeft > 0) {
-      _items[index] = current.copyWith(
+      next = current.copyWith(
         reserved: true,
         seatsLeft: current.seatsLeft - 1,
       );
+    } else {
+      return;
+    }
+    _items[index] = next;
+    notifyListeners();
+    await _database.update(next);
+  }
+
+  Future<void> add(Seance seance) async {
+    _request++;
+    try {
+      await _database.insert(seance);
+      _items.insert(0, seance);
+      _error = null;
+    } catch (error) {
+      _error = '$error';
+    }
+    _loading = false;
+    notifyListeners();
+  }
+
+  Future<void> update(Seance seance) async {
+    final index = _items.indexWhere((item) => item.id == seance.id);
+    if (index == -1) return;
+    _request++;
+    try {
+      await _database.update(seance);
+      _items[index] = seance;
+      _error = null;
+    } catch (error) {
+      _error = '$error';
     }
     notifyListeners();
   }
 
-  void add(Seance seance) {
-    _items.insert(0, seance);
+  Future<void> delete(String id) async {
+    _request++;
+    try {
+      await _database.delete(id);
+      _items.removeWhere((seance) => seance.id == id);
+      _error = null;
+    } catch (error) {
+      _error = '$error';
+    }
     notifyListeners();
   }
 }
-
-final _samples = <Seance>[
-  Seance(
-    id: 'docker',
-    subject: 'Docker',
-    title: 'Docker, de zéro à déployé',
-    host: 'Yassine Trabelsi',
-    date: DateTime(2026, 10, 7),
-    start: TimeOfDay(hour: 18, minute: 0),
-    end: TimeOfDay(hour: 19, minute: 30),
-    format: SessionFormat.online,
-    place: 'Visioconférence',
-    seatsLeft: 4,
-    reserved: true,
-  ),
-  Seance(
-    id: 'spring',
-    subject: 'Spring Boot',
-    title: 'Construire une API Spring Boot',
-    host: 'Sarah Ben Ali',
-    date: DateTime(2026, 10, 8),
-    start: TimeOfDay(hour: 14, minute: 0),
-    end: TimeOfDay(hour: 16, minute: 0),
-    format: SessionFormat.inPerson,
-    place: 'Salle B12',
-    seatsLeft: 3,
-  ),
-  Seance(
-    id: 'git',
-    subject: 'Git',
-    title: 'Git & GitHub sans stress',
-    host: 'Amine Khaled',
-    date: DateTime(2026, 10, 9),
-    start: TimeOfDay(hour: 10, minute: 0),
-    end: TimeOfDay(hour: 11, minute: 30),
-    format: SessionFormat.online,
-    place: 'Visioconférence',
-    seatsLeft: 8,
-  ),
-  Seance(
-    id: 'uml',
-    subject: 'UML',
-    title: 'Modéliser un projet avec UML',
-    host: 'Ines Gharbi',
-    date: DateTime(2026, 10, 10),
-    start: TimeOfDay(hour: 9, minute: 0),
-    end: TimeOfDay(hour: 12, minute: 0),
-    format: SessionFormat.inPerson,
-    place: 'Salle A3',
-    seatsLeft: 2,
-  ),
-];

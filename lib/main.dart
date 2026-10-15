@@ -59,6 +59,12 @@ class _StudyShellState extends State<StudyShell> {
   };
 
   @override
+  void initState() {
+    super.initState();
+    _store.load();
+  }
+
+  @override
   void dispose() {
     _store.dispose();
     super.dispose();
@@ -89,7 +95,10 @@ class _StudyShellState extends State<StudyShell> {
                 ),
                 StudyBottomNav(
                   currentIndex: _index,
-                  onSelected: (index) => setState(() => _index = index),
+                  onSelected: (index) {
+                    setState(() => _index = index);
+                    if (index == 3) _store.load();
+                  },
                 ),
               ],
             ),

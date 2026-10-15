@@ -4,7 +4,9 @@ import 'package:studymate/features/seances/models/seance.dart';
 import 'package:studymate/theme/app_colors.dart';
 
 class ProposerSeancePage extends StatefulWidget {
-  const ProposerSeancePage({super.key});
+  const ProposerSeancePage({super.key, this.seance});
+
+  final Seance? seance;
 
   @override
   State<ProposerSeancePage> createState() => _ProposerSeancePageState();
@@ -12,17 +14,35 @@ class ProposerSeancePage extends StatefulWidget {
 
 class _ProposerSeancePageState extends State<ProposerSeancePage> {
   final _formKey = GlobalKey<FormState>();
-  final _subject = TextEditingController();
-  final _title = TextEditingController();
-  final _host = TextEditingController();
-  final _place = TextEditingController(text: 'Visioconférence');
-  final _seats = TextEditingController(text: '6');
+  late final TextEditingController _subject;
+  late final TextEditingController _title;
+  late final TextEditingController _host;
+  late final TextEditingController _place;
+  late final TextEditingController _seats;
 
-  SessionFormat _format = SessionFormat.online;
-  bool _free = true;
-  DateTime _date = DateTime(2026, 10, 12);
-  TimeOfDay _start = const TimeOfDay(hour: 18, minute: 0);
-  TimeOfDay _end = const TimeOfDay(hour: 19, minute: 30);
+  late SessionFormat _format;
+  late bool _free;
+  late DateTime _date;
+  late TimeOfDay _start;
+  late TimeOfDay _end;
+
+  bool get _editing => widget.seance != null;
+
+  @override
+  void initState() {
+    super.initState();
+    final seance = widget.seance;
+    _subject = TextEditingController(text: seance?.subject ?? '');
+    _title = TextEditingController(text: seance?.title ?? '');
+    _host = TextEditingController(text: seance?.host ?? '');
+    _place = TextEditingController(text: seance?.place ?? 'Visioconférence');
+    _seats = TextEditingController(text: '${seance?.seatsLeft ?? 6}');
+    _format = seance?.format ?? SessionFormat.online;
+    _free = seance?.free ?? true;
+    _date = seance?.date ?? DateTime(2026, 10, 12);
+    _start = seance?.start ?? const TimeOfDay(hour: 18, minute: 0);
+    _end = seance?.end ?? const TimeOfDay(hour: 19, minute: 30);
+  }
 
   @override
   void dispose() {
@@ -62,10 +82,10 @@ class _ProposerSeancePageState extends State<ProposerSeancePage> {
                             onTap: () => Navigator.of(context).pop(),
                           ),
                           const SizedBox(width: 12),
-                          const Expanded(
+                          Expanded(
                             child: Text(
-                              'Proposer une séance',
-                              style: TextStyle(
+                              _editing ? 'Modifier la séance' : 'Proposer une séance',
+                              style: const TextStyle(
                                 color: AppColors.text,
                                 fontSize: 22,
                                 fontWeight: FontWeight.w800,
@@ -217,7 +237,7 @@ class _ProposerSeancePageState extends State<ProposerSeancePage> {
                         fontWeight: FontWeight.w700,
                       ),
                     ),
-                    child: const Text('Publier la séance'),
+                    child: Text(_editing ? 'Enregistrer' : 'Publier la séance'),
                   ),
                 ),
               ),
@@ -252,8 +272,9 @@ class _ProposerSeancePageState extends State<ProposerSeancePage> {
   void _submit() {
     if (!_formKey.currentState!.validate()) return;
     final seats = int.parse(_seats.text);
+    final existing = widget.seance;
     final seance = Seance(
-      id: DateTime.now().microsecondsSinceEpoch.toString(),
+      id: existing?.id ?? DateTime.now().microsecondsSinceEpoch.toString(),
       subject: _subject.text.trim(),
       title: _title.text.trim(),
       host: _host.text.trim(),
@@ -263,6 +284,7 @@ class _ProposerSeancePageState extends State<ProposerSeancePage> {
       format: _format,
       place: _place.text.trim(),
       seatsLeft: seats,
+      reserved: existing?.reserved ?? false,
       free: _free,
       priceLabel: _free ? null : 'Payant',
     );

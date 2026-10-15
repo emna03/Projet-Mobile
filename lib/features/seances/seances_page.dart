@@ -51,13 +51,40 @@ class SeancesPage extends StatelessWidget {
               onSelected: store.setFormat,
             ),
             const SizedBox(height: 18),
-            if (sessions.isEmpty)
+            if (store.error != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 48),
+                child: Text(
+                  store.error!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: AppColors.muted,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              )
+            else if (store.loading)
+              const Padding(
+                padding: EdgeInsets.only(top: 48),
+                child: Center(
+                  child: Text(
+                    'Chargement des séances...',
+                    style: TextStyle(
+                      color: AppColors.muted,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              )
+            else if (sessions.isEmpty)
               const _EmptySessions()
             else
               for (final seance in sessions) ...[
                 SeanceCard(
                   seance: seance,
                   onReserve: () => store.toggleReservation(seance.id),
+                  onEdit: () => _openEdit(context, seance),
+                  onDelete: () => _confirmDelete(context, seance),
                 ),
                 const SizedBox(height: 14),
               ],
@@ -72,7 +99,41 @@ class SeancesPage extends StatelessWidget {
       MaterialPageRoute(builder: (_) => const ProposerSeancePage()),
     );
     if (created != null) {
-      store.add(created);
+      await store.add(created);
+    }
+  }
+
+  Future<void> _openEdit(BuildContext context, Seance seance) async {
+    final updated = await Navigator.of(context).push<Seance>(
+      MaterialPageRoute(builder: (_) => ProposerSeancePage(seance: seance)),
+    );
+    if (updated != null) {
+      await store.update(updated);
+    }
+  }
+
+  Future<void> _confirmDelete(BuildContext context, Seance seance) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Supprimer la séance'),
+          content: Text('Supprimer « ${seance.title} » ?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Annuler'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Supprimer'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirmed == true) {
+      await store.delete(seance.id);
     }
   }
 }

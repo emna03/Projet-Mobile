@@ -38,25 +38,90 @@ class Seance {
   String get priceText => free ? 'Gratuit' : (priceLabel ?? '');
 
   Seance copyWith({
+    String? subject,
+    String? title,
+    String? host,
+    DateTime? date,
+    TimeOfDay? start,
+    TimeOfDay? end,
+    SessionFormat? format,
+    String? place,
     int? seatsLeft,
     bool? reserved,
+    bool? free,
+    String? priceLabel,
   }) {
     return Seance(
       id: id,
-      subject: subject,
-      title: title,
-      host: host,
-      date: date,
-      start: start,
-      end: end,
-      format: format,
-      place: place,
+      subject: subject ?? this.subject,
+      title: title ?? this.title,
+      host: host ?? this.host,
+      date: date ?? this.date,
+      start: start ?? this.start,
+      end: end ?? this.end,
+      format: format ?? this.format,
+      place: place ?? this.place,
       seatsLeft: seatsLeft ?? this.seatsLeft,
       reserved: reserved ?? this.reserved,
-      free: free,
-      priceLabel: priceLabel,
+      free: free ?? this.free,
+      priceLabel: priceLabel ?? this.priceLabel,
     );
   }
+
+  Map<String, Object?> toMap() {
+    return {
+      'id': id,
+      'subject': subject,
+      'title': title,
+      'host': host,
+      'date': _formatDate(date),
+      'start_minutes': start.hour * 60 + start.minute,
+      'end_minutes': end.hour * 60 + end.minute,
+      'format': format.name,
+      'place': place,
+      'seats_left': seatsLeft,
+      'reserved': reserved ? 1 : 0,
+      'free': free ? 1 : 0,
+      'price_label': priceLabel,
+    };
+  }
+
+  factory Seance.fromMap(Map<String, Object?> map) {
+    return Seance(
+      id: map['id']! as String,
+      subject: map['subject']! as String,
+      title: map['title']! as String,
+      host: map['host']! as String,
+      date: _parseDate(map['date']! as String),
+      start: _timeFromMinutes(map['start_minutes']! as int),
+      end: _timeFromMinutes(map['end_minutes']! as int),
+      format: SessionFormat.values.byName(map['format']! as String),
+      place: map['place']! as String,
+      seatsLeft: map['seats_left']! as int,
+      reserved: (map['reserved']! as int) == 1,
+      free: (map['free']! as int) == 1,
+      priceLabel: map['price_label'] as String?,
+    );
+  }
+}
+
+String _formatDate(DateTime date) {
+  final month = date.month.toString().padLeft(2, '0');
+  final day = date.day.toString().padLeft(2, '0');
+  return '${date.year}-$month-$day';
+}
+
+DateTime _parseDate(String value) {
+  final parts = value.split('-');
+  return DateTime(
+    int.parse(parts[0]),
+    int.parse(parts[1]),
+    int.parse(parts[2]),
+  );
+}
+
+TimeOfDay _timeFromMinutes(int minutes) {
+  return TimeOfDay(hour: minutes ~/ 60, minute: minutes % 60);
 }
 
 String formatSeanceDay(DateTime date) {
