@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:studymate/features/seances/models/seance.dart';
 import 'package:studymate/theme/app_colors.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class SeanceCard extends StatelessWidget {
   const SeanceCard({
@@ -112,20 +113,7 @@ class SeanceCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 8),
-          Row(
-            children: [
-              Icon(placeIcon, size: 16, color: AppColors.subtle),
-              const SizedBox(width: 6),
-              Text(
-                seance.place,
-                style: const TextStyle(
-                  color: Color(0xFF6F6A7D),
-                  fontSize: 13.5,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
+          _PlaceLine(seance: seance, icon: placeIcon),
           const SizedBox(height: 16),
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
@@ -171,6 +159,45 @@ class SeanceCard extends StatelessWidget {
     if (seats <= 0) return 'Complet';
     if (seats == 1) return '1 place disponible';
     return '$seats places disponibles';
+  }
+}
+
+class _PlaceLine extends StatelessWidget {
+  const _PlaceLine({required this.seance, required this.icon});
+
+  final Seance seance;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final link = Uri.tryParse(seance.place.trim());
+    final canJoin = seance.isOnline &&
+        link != null &&
+        link.scheme == 'https' &&
+        link.host == 'meet.google.com';
+
+    return InkWell(
+      onTap: canJoin
+          ? () => launchUrl(link, mode: LaunchMode.externalApplication)
+          : null,
+      borderRadius: BorderRadius.circular(8),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: AppColors.subtle),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              canJoin ? 'Rejoindre Google Meet' : seance.place,
+              style: TextStyle(
+                color: canJoin ? AppColors.primary : const Color(0xFF6F6A7D),
+                fontSize: 13.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

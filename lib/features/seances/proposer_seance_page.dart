@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:studymate/features/seances/models/seance.dart';
 import 'package:studymate/theme/app_colors.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class ProposerSeancePage extends StatefulWidget {
   const ProposerSeancePage({super.key, this.seance});
@@ -35,7 +36,10 @@ class _ProposerSeancePageState extends State<ProposerSeancePage> {
     _subject = TextEditingController(text: seance?.subject ?? '');
     _title = TextEditingController(text: seance?.title ?? '');
     _host = TextEditingController(text: seance?.host ?? '');
-    _place = TextEditingController(text: seance?.place ?? 'Visioconférence');
+    _place = TextEditingController(
+      text: seance?.place ??
+          (seance?.format == SessionFormat.inPerson ? 'Salle B12' : ''),
+    );
     _seats = TextEditingController(text: '${seance?.seatsLeft ?? 6}');
     _format = seance?.format ?? SessionFormat.online;
     _free = seance?.free ?? true;
@@ -136,9 +140,8 @@ class _ProposerSeancePageState extends State<ProposerSeancePage> {
                               selected: _format == SessionFormat.online,
                               onTap: () => setState(() {
                                 _format = SessionFormat.online;
-                                if (_place.text.trim().isEmpty ||
-                                    _place.text == 'Salle B12') {
-                                  _place.text = 'Visioconférence';
+                                if (!_isMeetLink(_place.text)) {
+                                  _place.clear();
                                 }
                               }),
                             ),
@@ -151,7 +154,8 @@ class _ProposerSeancePageState extends State<ProposerSeancePage> {
                               selected: _format == SessionFormat.inPerson,
                               onTap: () => setState(() {
                                 _format = SessionFormat.inPerson;
-                                if (_place.text == 'Visioconférence') {
+                                if (_place.text.trim().isEmpty ||
+                                    _isMeetLink(_place.text)) {
                                   _place.text = 'Salle B12';
                                 }
                               }),
@@ -160,11 +164,44 @@ class _ProposerSeancePageState extends State<ProposerSeancePage> {
                         ],
                       ),
                       const SizedBox(height: 16),
-                      _Field(
-                        label: _format == SessionFormat.online ? 'Lieu' : 'Salle',
-                        controller: _place,
-                        hint: 'Visioconférence',
-                      ),
+                      if (_format == SessionFormat.online) ...[
+                        _Field(
+                          label: 'Lien Google Meet',
+                          controller: _place,
+                          hint: 'https://meet.google.com/abc-defg-hij',
+                          keyboardType: TextInputType.url,
+                          validator: (value) {
+                            if (!_isMeetLink(value ?? '')) {
+                              return 'Colle un lien Google Meet';
+                            }
+                            return null;
+                          },
+                        ),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton.icon(
+                            onPressed: _createMeetLink,
+                            icon: const Icon(Icons.video_call_outlined),
+                            label: const Text('Créer le lien sur Google Meet'),
+                          ),
+                        ),
+                        const Padding(
+                          padding: EdgeInsets.only(bottom: 14),
+                          child: Text(
+                            'Google ouvre une nouvelle réunion. Copie le lien et colle-le ici.',
+                            style: TextStyle(
+                              color: AppColors.muted,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ] else
+                        _Field(
+                          label: 'Salle',
+                          controller: _place,
+                          hint: 'Salle B12',
+                        ),
                       Row(
                         children: [
                           Expanded(
@@ -246,6 +283,30 @@ class _ProposerSeancePageState extends State<ProposerSeancePage> {
         ),
       ),
     );
+  }
+
+  bool _isMeetLink(String value) {
+    final uri = Uri.tryParse(value.trim());
+    if (uri == null || uri.scheme != 'https' || uri.host != 'meet.google.com') {
+      return false;
+    }
+    final code = uri.path.replaceAll('/', '');
+    return code.isNotEmpty && code != 'new';
+  }
+
+  Future<void> _createMeetLink() async {
+    final uri = Uri.parse('https://meet.google.com/new');
+    try {
+      final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!opened && mounted) {
+        await launchUrl(uri, mode: LaunchMode.inAppBrowserView);
+      }
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Impossible d\'ouvrir Google Meet. $error')),
+      );
+    }
   }
 
   Future<void> _pickDate() async {
