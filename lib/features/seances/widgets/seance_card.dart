@@ -7,15 +7,17 @@ class SeanceCard extends StatelessWidget {
   const SeanceCard({
     super.key,
     required this.seance,
+    required this.isOwner,
     required this.onReserve,
-    required this.onEdit,
-    required this.onDelete,
+    this.onEdit,
+    this.onDelete,
   });
 
   final Seance seance;
+  final bool isOwner;
   final VoidCallback onReserve;
-  final VoidCallback onEdit;
-  final VoidCallback onDelete;
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -51,19 +53,35 @@ class SeanceCard extends StatelessWidget {
                 ),
               ),
               const Spacer(),
+              if (isOwner) ...[
+                const _OwnerBadge(),
+                const SizedBox(width: 8),
+              ],
               _ModeBadge(online: seance.isOnline),
-              PopupMenuButton<String>(
-                padding: EdgeInsets.zero,
-                icon: const Icon(Icons.more_horiz_rounded, color: AppColors.muted),
-                onSelected: (value) {
-                  if (value == 'edit') onEdit();
-                  if (value == 'delete') onDelete();
-                },
-                itemBuilder: (context) => const [
-                  PopupMenuItem(value: 'edit', child: Text('Modifier')),
-                  PopupMenuItem(value: 'delete', child: Text('Supprimer')),
-                ],
-              ),
+              if (isOwner && (onEdit != null || onDelete != null))
+                PopupMenuButton<String>(
+                  padding: EdgeInsets.zero,
+                  icon: const Icon(
+                    Icons.more_horiz_rounded,
+                    color: AppColors.muted,
+                  ),
+                  onSelected: (value) {
+                    if (value == 'edit') onEdit?.call();
+                    if (value == 'delete') onDelete?.call();
+                  },
+                  itemBuilder: (context) => [
+                    if (onEdit != null)
+                      const PopupMenuItem(
+                        value: 'edit',
+                        child: Text('Modifier'),
+                      ),
+                    if (onDelete != null)
+                      const PopupMenuItem(
+                        value: 'delete',
+                        child: Text('Supprimer'),
+                      ),
+                  ],
+                ),
             ],
           ),
           const SizedBox(height: 10),
@@ -196,6 +214,29 @@ class _PlaceLine extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _OwnerBadge extends StatelessWidget {
+  const _OwnerBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: AppColors.primarySoft,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: const Text(
+        'Ta séance',
+        style: TextStyle(
+          color: AppColors.primary,
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }

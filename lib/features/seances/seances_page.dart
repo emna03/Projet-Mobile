@@ -41,6 +41,15 @@ class SeancesPage extends StatelessWidget {
                 fontWeight: FontWeight.w500,
               ),
             ),
+            const SizedBox(height: 6),
+            Text(
+              'Connecté en tant que ${store.user.displayName}',
+              style: const TextStyle(
+                color: AppColors.subtle,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
             const SizedBox(height: 22),
             _ProposeButton(
               onPressed: () => _openPropose(context),
@@ -82,9 +91,14 @@ class SeancesPage extends StatelessWidget {
               for (final seance in sessions) ...[
                 SeanceCard(
                   seance: seance,
+                  isOwner: store.isOwner(seance),
                   onReserve: () => store.toggleReservation(seance.id),
-                  onEdit: () => _openEdit(context, seance),
-                  onDelete: () => _confirmDelete(context, seance),
+                  onEdit: store.isOwner(seance)
+                      ? () => _openEdit(context, seance)
+                      : null,
+                  onDelete: store.isOwner(seance)
+                      ? () => _confirmDelete(context, seance)
+                      : null,
                 ),
                 const SizedBox(height: 14),
               ],
@@ -99,20 +113,34 @@ class SeancesPage extends StatelessWidget {
       MaterialPageRoute(builder: (_) => const ProposerSeancePage()),
     );
     if (created != null) {
-      await store.add(created);
+      final saved = await store.add(created);
+      if (!saved && context.mounted) {
+        _showDenied(context, 'Impossible de publier cette séance.');
+      }
     }
   }
 
   Future<void> _openEdit(BuildContext context, Seance seance) async {
+    if (!store.isOwner(seance)) {
+      _showDenied(context, 'Tu ne peux modifier que tes propres séances.');
+      return;
+    }
     final updated = await Navigator.of(context).push<Seance>(
       MaterialPageRoute(builder: (_) => ProposerSeancePage(seance: seance)),
     );
     if (updated != null) {
-      await store.update(updated);
+      final saved = await store.update(updated);
+      if (!saved && context.mounted) {
+        _showDenied(context, 'Tu ne peux modifier que tes propres séances.');
+      }
     }
   }
 
   Future<void> _confirmDelete(BuildContext context, Seance seance) async {
+    if (!store.isOwner(seance)) {
+      _showDenied(context, 'Tu ne peux supprimer que tes propres séances.');
+      return;
+    }
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) {
@@ -133,8 +161,15 @@ class SeancesPage extends StatelessWidget {
       },
     );
     if (confirmed == true) {
-      await store.delete(seance.id);
+      final deleted = await store.delete(seance.id);
+      if (!deleted && context.mounted) {
+        _showDenied(context, 'Tu ne peux supprimer que tes propres séances.');
+      }
     }
+  }
+
+  void _showDenied(BuildContext context, String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 }
 

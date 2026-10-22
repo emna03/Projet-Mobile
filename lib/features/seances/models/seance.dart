@@ -5,6 +5,7 @@ enum SessionFormat { online, inPerson }
 class Seance {
   const Seance({
     required this.id,
+    required this.ownerId,
     required this.subject,
     required this.title,
     required this.host,
@@ -20,6 +21,7 @@ class Seance {
   });
 
   final String id;
+  final String ownerId;
   final String subject;
   final String title;
   final String host;
@@ -38,6 +40,7 @@ class Seance {
   String get priceText => free ? 'Gratuit' : (priceLabel ?? '');
 
   Seance copyWith({
+    String? ownerId,
     String? subject,
     String? title,
     String? host,
@@ -53,6 +56,7 @@ class Seance {
   }) {
     return Seance(
       id: id,
+      ownerId: ownerId ?? this.ownerId,
       subject: subject ?? this.subject,
       title: title ?? this.title,
       host: host ?? this.host,
@@ -71,6 +75,7 @@ class Seance {
   Map<String, Object?> toMap() {
     return {
       'id': id,
+      'owner_id': ownerId,
       'subject': subject,
       'title': title,
       'host': host,
@@ -89,6 +94,7 @@ class Seance {
   factory Seance.fromMap(Map<String, Object?> map) {
     return Seance(
       id: map['id']! as String,
+      ownerId: (map['owner_id'] as String?) ?? '',
       subject: map['subject']! as String,
       title: map['title']! as String,
       host: map['host']! as String,

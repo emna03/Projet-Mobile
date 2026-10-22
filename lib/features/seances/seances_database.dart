@@ -59,36 +59,97 @@ class SeancesDatabase {
     final path = p.join(directory, fileName);
     return openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: (db, version) async {
-        await db.execute('''
-          CREATE TABLE seances (
-            id TEXT PRIMARY KEY,
-            subject TEXT NOT NULL,
-            title TEXT NOT NULL,
-            host TEXT NOT NULL,
-            date TEXT NOT NULL,
-            start_minutes INTEGER NOT NULL,
-            end_minutes INTEGER NOT NULL,
-            format TEXT NOT NULL,
-            place TEXT NOT NULL,
-            seats_left INTEGER NOT NULL,
-            reserved INTEGER NOT NULL,
-            free INTEGER NOT NULL,
-            price_label TEXT
-          )
-        ''');
+        await db.execute(_createTableSql);
         for (final seance in _sampleSeances) {
           await db.insert('seances', seance.toMap());
+        }
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await db.execute(
+            'ALTER TABLE seances ADD COLUMN owner_id TEXT NOT NULL DEFAULT ""',
+          );
+          for (final seance in _sampleSeances) {
+            final existing = await db.query(
+              'seances',
+              where: 'id = ?',
+              whereArgs: [seance.id],
+            );
+            if (existing.isEmpty) {
+              await db.insert('seances', seance.toMap());
+            } else {
+              await db.update(
+                'seances',
+                {'owner_id': seance.ownerId},
+                where: 'id = ?',
+                whereArgs: [seance.id],
+              );
+            }
+          }
+          final leftover = await db.query(
+            'seances',
+            where: 'owner_id = ? OR owner_id IS NULL',
+            whereArgs: const [''],
+          );
+          for (final row in leftover) {
+            await db.update(
+              'seances',
+              {'owner_id': _ownerIdForHost(row['host'] as String?)},
+              where: 'id = ?',
+              whereArgs: [row['id']],
+            );
+          }
         }
       },
     );
   }
 }
 
+const _createTableSql = '''
+  CREATE TABLE seances (
+    id TEXT PRIMARY KEY,
+    owner_id TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    title TEXT NOT NULL,
+    host TEXT NOT NULL,
+    date TEXT NOT NULL,
+    start_minutes INTEGER NOT NULL,
+    end_minutes INTEGER NOT NULL,
+    format TEXT NOT NULL,
+    place TEXT NOT NULL,
+    seats_left INTEGER NOT NULL,
+    reserved INTEGER NOT NULL,
+    free INTEGER NOT NULL,
+    price_label TEXT
+  )
+''';
+
+String _ownerIdForHost(String? host) {
+  for (final seance in _sampleSeances) {
+    if (seance.host == host) return seance.ownerId;
+  }
+  return 'user-other';
+}
+
 final _sampleSeances = <Seance>[
   Seance(
+    id: 'flutter',
+    ownerId: 'user-ab',
+    subject: 'Flutter',
+    title: 'Révisions Flutter & Dart',
+    host: 'Alex Benali',
+    date: DateTime(2026, 10, 11),
+    start: const TimeOfDay(hour: 17, minute: 0),
+    end: const TimeOfDay(hour: 18, minute: 30),
+    format: SessionFormat.online,
+    place: 'Visioconférence',
+    seatsLeft: 6,
+  ),
+  Seance(
     id: 'docker',
+    ownerId: 'user-yassine',
     subject: 'Docker',
     title: 'Docker, de zéro à déployé',
     host: 'Yassine Trabelsi',
@@ -102,6 +163,7 @@ final _sampleSeances = <Seance>[
   ),
   Seance(
     id: 'spring',
+    ownerId: 'user-sarah',
     subject: 'Spring Boot',
     title: 'Construire une API Spring Boot',
     host: 'Sarah Ben Ali',
@@ -114,6 +176,7 @@ final _sampleSeances = <Seance>[
   ),
   Seance(
     id: 'git',
+    ownerId: 'user-amine',
     subject: 'Git',
     title: 'Git & GitHub sans stress',
     host: 'Amine Khaled',
@@ -126,6 +189,7 @@ final _sampleSeances = <Seance>[
   ),
   Seance(
     id: 'uml',
+    ownerId: 'user-ines',
     subject: 'UML',
     title: 'Modéliser un projet avec UML',
     host: 'Ines Gharbi',

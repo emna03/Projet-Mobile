@@ -1,11 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:studymate/features/auth/current_user.dart';
 import 'package:studymate/features/seances/models/seance.dart';
 import 'package:studymate/features/seances/seances_database.dart';
 
 /// Séances de révision stored in SQLite through sqflite.
 class SeancesStore extends ChangeNotifier {
-  SeancesStore({SeancesDatabase? database})
-      : _database = database ?? SeancesDatabase();
+  SeancesStore({SeancesDatabase? database, AuthSession? session})
+      : _database = database ?? SeancesDatabase(),
+        _session = session ?? AuthSession.instance {
+    _session.addListener(notifyListeners);
+  }
+
+  final AuthSession _session;
 
   final SeancesDatabase _database;
   final List<Seance> _items = [];
@@ -75,42 +81,68 @@ class SeancesStore extends ChangeNotifier {
     await _database.update(next);
   }
 
-  Future<void> add(Seance seance) async {
-    _request++;
-    try {
-      await _database.insert(seance);
-      _items.insert(0, seance);
-      _error = null;
-    } catch (error) {
-      _error = '$error';
-    }
-    _loading = false;
-    notifyListeners();
+  AppUser get user => _session.user;
+
+  bool isOwner(Seance seance) => user.owns(seance.ownerId);
+
+  @override
+  void dispose() {
+    _session.removeListener(notifyListeners);
+    super.dispose();
   }
 
-  Future<void> update(Seance seance) async {
+  Future<bool> add(Seance seance) async {
+    final owned = seance.copyWith(ownerId: user.id);
+    _request++;
+    try {
+      await _database.insert(owned);
+      _items.insert(0, owned);
+      _error = null;
+      _loading = false;
+      notifyListeners();
+      return true;
+    } catch (error) {
+      _error = '$error';
+      _loading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> update(Seance seance) async {
     final index = _items.indexWhere((item) => item.id == seance.id);
-    if (index == -1) return;
+    if (index == -1) return false;
+    if (!isOwner(_items[index])) return false;
+    final owned = seance.copyWith(ownerId: _items[index].ownerId);
     _request++;
     try {
-      await _database.update(seance);
-      _items[index] = seance;
+      await _database.update(owned);
+      _items[index] = owned;
       _error = null;
+      notifyListeners();
+      return true;
     } catch (error) {
       _error = '$error';
+      notifyListeners();
+      return false;
     }
-    notifyListeners();
   }
 
-  Future<void> delete(String id) async {
+  Future<bool> delete(String id) async {
+    final index = _items.indexWhere((seance) => seance.id == id);
+    if (index == -1) return false;
+    if (!isOwner(_items[index])) return false;
     _request++;
     try {
       await _database.delete(id);
-      _items.removeWhere((seance) => seance.id == id);
+      _items.removeAt(index);
       _error = null;
+      notifyListeners();
+      return true;
     } catch (error) {
       _error = '$error';
+      notifyListeners();
+      return false;
     }
-    notifyListeners();
   }
 }
