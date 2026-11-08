@@ -57,6 +57,7 @@ dependencies:
   flutter_secure_storage: ^11.2.0
   share_plus: ^13.3.1
   firebase_ai: ^5.1.0
+  url_launcher: ^6.3.3
 dev_dependencies:
   flutter_test:
     sdk: flutter

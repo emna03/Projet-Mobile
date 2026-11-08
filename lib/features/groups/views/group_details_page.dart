@@ -6,6 +6,7 @@ import '../models/join_request.dart';
 import '../viewmodels/group_viewmodel.dart';
 import 'edit_group_page.dart';
 import '../widgets/group_resources_section.dart';
+import '../widgets/group_books_section.dart';
 import '../../group_chat/viewmodels/group_chat_viewmodel.dart';
 import '../../group_chat/views/group_chat_page.dart';
 
@@ -351,6 +352,17 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                 GroupResourcesSection(
                   groupId: group.id,
                   groupName: group.name,
+                  isMember: status == MembershipStatus.owner ||
+                      status == MembershipStatus.member,
+                ),
+                const SizedBox(height: 16),
+
+                // ── Livres recommandés (API externe Google Books) ─────────
+                GroupBooksSection(
+                  key: ValueKey('books-${group.id}-${group.name}'),
+                  groupId: group.id,
+                  groupName: group.name,
+                  groupDescription: group.description,
                   isMember: status == MembershipStatus.owner ||
                       status == MembershipStatus.member,
                 ),
