@@ -1,0 +1,214 @@
+rules_version = '2';
+
+// Règles de sécurité StudyMate (groupes, adhésions, chat, sondages).
+// Déploiement : firebase deploy --only firestore:rules
+//
+// Principes :
+// - Firebase Authentication est la seule source d'identité (request.auth.uid).
+// - Les contrôles de l'application ne suffisent pas : chaque écriture est
+//   revérifiée ici (propriétaire, membre, auteur, capacité, sondage ouvert).
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function uid() {
+      return request.auth.uid;
+    }
+
+    function changed() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+
+    function groupDoc(groupId) {
+      return get(/databases/$(database)/documents/groups/$(groupId));
+    }
+
+    function isGroupMember(groupId) {
+      return signedIn() && uid() in groupDoc(groupId).data.memberIds;
+    }
+
+    function isGroupOwner(groupId) {
+      return signedIn() && groupDoc(groupId).data.ownerId == uid();
+    }
+
+    // ── Profils publics ──────────────────────────────────────────────────
+    // Nom, rôle et photo, lisibles par les utilisateurs connectés.
+    // Chacun ne modifie que son propre document.
+    match /users/{userId} {
+      allow read: if signedIn();
+      allow create, update: if signedIn() && userId == uid()
+        && request.resource.data.keys().hasOnly(['displayName', 'role', 'photoUrl', 'updatedAt'])
+        && request.resource.data.role in ['student', 'teacher'];
+      allow delete: if false;
+    }
+
+    // ── Groupes ──────────────────────────────────────────────────────────
+    match /groups/{groupId} {
+      function validGroup(d) {
+        return d.name is string && d.name.size() >= 3 && d.name.size() <= 60
+          && d.description is string && d.description.size() <= 300
+          && d.level is string
+          && d.isPublic is bool
+          && d.maxMembers is int && d.maxMembers >= 2 && d.maxMembers <= 50
+          && d.memberIds is list
+          && d.memberIds.size() <= d.maxMembers
+          && d.ownerId in d.memberIds;
+      }
+
+      // Adhésion directe : uniquement soi-même, groupe public, non complet.
+      function isSelfJoin() {
+        return changed().hasOnly(['memberIds'])
+          && resource.data.isPublic == true
+          && !(uid() in resource.data.memberIds)
+          && request.resource.data.memberIds.toSet()
+               == resource.data.memberIds.toSet().union([uid()].toSet())
+          && request.resource.data.memberIds.size() == resource.data.memberIds.size() + 1
+          && request.resource.data.memberIds.size() <= resource.data.maxMembers;
+      }
+
+      // Départ : uniquement soi-même, jamais le propriétaire.
+      function isSelfLeave() {
+        return changed().hasOnly(['memberIds'])
+          && resource.data.ownerId != uid()
+          && uid() in resource.data.memberIds
+          && request.resource.data.memberIds.toSet()
+               == resource.data.memberIds.toSet().difference([uid()].toSet());
+      }
+
+      // Les métadonnées sont visibles pour pouvoir trouver / demander un
+      // groupe privé ; son contenu (chat, ressources) reste réservé aux membres.
+      allow read: if signedIn();
+
+      allow create: if signedIn()
+        && request.resource.data.ownerId == uid()
+        && validGroup(request.resource.data);
+
+      allow update: if signedIn() && (
+        (resource.data.ownerId == uid()
+          && request.resource.data.ownerId == resource.data.ownerId
+          && request.resource.data.createdAt == resource.data.createdAt
+          && validGroup(request.resource.data))
+        || isSelfJoin()
+        || isSelfLeave()
+      );
+
+      allow delete: if signedIn() && resource.data.ownerId == uid();
+
+      // ── Chat : messages ────────────────────────────────────────────────
+      match /messages/{messageId} {
+        allow read: if isGroupMember(groupId);
+
+        allow create: if isGroupMember(groupId)
+          && request.resource.data.senderId == uid()
+          && request.resource.data.type in ['text', 'attachment', 'poll']
+          && request.resource.data.reactions == {}
+          && request.resource.data.deletedAt == null;
+
+        allow update: if isGroupMember(groupId) && (
+          // Auteur : modification / suppression douce de son message.
+          (resource.data.senderId == uid()
+            && changed().hasOnly(['content', 'updatedAt', 'deletedAt']))
+          // Tout membre : uniquement SA réaction.
+          || (changed().hasOnly(['reactions'])
+            && request.resource.data.reactions.diff(resource.data.reactions)
+                 .affectedKeys().hasOnly([uid()]))
+        );
+
+        // Suppression physique : propriétaire du groupe (suppression du groupe).
+        allow delete: if isGroupOwner(groupId);
+      }
+
+      // ── Chat : copie des petites pièces jointes ────────────────────────
+      match /attachmentData/{messageId} {
+        allow read: if isGroupMember(groupId);
+        allow create: if isGroupMember(groupId)
+          && request.resource.data.senderId == uid();
+        allow update: if false;
+        allow delete: if isGroupOwner(groupId);
+      }
+
+      // ── Sondages ───────────────────────────────────────────────────────
+      match /polls/{pollId} {
+        allow read: if isGroupMember(groupId);
+
+        allow create: if isGroupMember(groupId)
+          && request.resource.data.createdBy == uid()
+          && request.resource.data.options.size() >= 2
+          && request.resource.data.options.size() <= 8
+          && request.resource.data.votes == {}
+          && request.resource.data.closedAt == null;
+
+        allow update: if isGroupMember(groupId) && (
+          // Vote : sondage ouvert, uniquement son propre vote.
+          (resource.data.closedAt == null
+            && changed().hasOnly(['votes'])
+            && request.resource.data.votes.diff(resource.data.votes)
+                 .affectedKeys().hasOnly([uid()]))
+          // Clôture : créateur du sondage ou propriétaire du groupe.
+          || (resource.data.closedAt == null
+            && changed().hasOnly(['closedAt'])
+            && (resource.data.createdBy == uid() || isGroupOwner(groupId)))
+        );
+
+        allow delete: if isGroupOwner(groupId);
+      }
+
+      // ── Messages épinglés (propriétaire uniquement) ────────────────────
+      match /pinned/{messageId} {
+        allow read: if isGroupMember(groupId);
+        allow write: if isGroupOwner(groupId);
+      }
+    }
+
+    // ── Demandes d'adhésion ──────────────────────────────────────────────
+    // Identifiant : {groupId}__{userId}. Lisibles par le demandeur et par le
+    // propriétaire du groupe uniquement.
+    match /group_join_requests/{requestId} {
+      function requesterOf(id) {
+        return id.split('__')[1];
+      }
+
+      allow get: if signedIn()
+        && (requesterOf(requestId) == uid() || resource.data.ownerId == uid());
+      allow list: if signedIn()
+        && (resource.data.userId == uid() || resource.data.ownerId == uid());
+
+      // Création / renouvellement par le demandeur, pour lui-même, sur un
+      // groupe dont il n'est pas membre ; ownerId doit être le vrai propriétaire.
+      allow create: if signedIn()
+        && requestId == request.resource.data.groupId + '__' + uid()
+        && request.resource.data.userId == uid()
+        && request.resource.data.status == 'pending'
+        && request.resource.data.ownerId == groupDoc(request.resource.data.groupId).data.ownerId
+        && !(uid() in groupDoc(request.resource.data.groupId).data.memberIds);
+
+      allow update: if signedIn() && (
+        // Propriétaire : accepter / refuser une demande en attente.
+        (resource.data.ownerId == uid()
+          && resource.data.status == 'pending'
+          && changed().hasOnly(['status', 'reviewedAt'])
+          && request.resource.data.status in ['accepted', 'rejected'])
+        // Demandeur : renouveler une demande traitée (refusée / acceptée puis quittée).
+        || (resource.data.userId == uid()
+          && resource.data.status != 'pending'
+          && request.resource.data.status == 'pending'
+          && request.resource.data.userId == uid()
+          && request.resource.data.groupId == resource.data.groupId
+          && request.resource.data.ownerId == groupDoc(resource.data.groupId).data.ownerId
+          && !(uid() in groupDoc(resource.data.groupId).data.memberIds))
+      );
+
+      // Annulation par le demandeur ; nettoyage par le propriétaire.
+      allow delete: if signedIn()
+        && (resource.data.userId == uid() || resource.data.ownerId == uid());
+    }
+
+    // Tout le reste est refusé.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
