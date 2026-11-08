@@ -50,5 +50,9 @@ app.*.map.json
 # Secrets locaux (flutter run --dart-define-from-file=dart_defines.json)
 dart_defines.json
 
+# GGUF locaux génériques — sauf le Qwen KG versionné via Git LFS
+*.gguf
+!models/kg_llm/qwen2.5-0.5b-instruct-q4_k_m.gguf
+
 # Dépendances des tests de règles Firestore
 /firestore_tests/node_modules/

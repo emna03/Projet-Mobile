@@ -1,17 +1,58 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import '../../../core/constants/session_user.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/sm_widgets.dart';
+import '../../gestion_user/repositories/user_repository.dart';
+import '../../quizzes/quiz_demo_main.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  /// Titre de bienvenue : « Bonjour {prénom} » ou secours sans email.
+  String _greetingTitle = 'Bonjour';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadGreeting();
+  }
+
+  /// Source : table SQLite `users` (prénom du profil local lié à l'email de session).
+  Future<void> _loadGreeting() async {
+    final email = SessionUser.email;
+    var title = 'Bonjour Invité';
+
+    if (email.isNotEmpty) {
+      try {
+        final user = await UserRepository().getUserByEmail(email);
+        final prenom = (user?.prenom ?? '').trim();
+        final nom = (user?.nom ?? '').trim();
+        if (prenom.isNotEmpty) {
+          title = 'Bonjour $prenom';
+        } else if (nom.isNotEmpty) {
+          title = 'Bonjour $nom';
+        }
+      } catch (_) {
+        // Garde le secours « Bonjour Invité » (jamais l'email).
+      }
+    }
+
+    if (!mounted) return;
+    setState(() => _greetingTitle = title);
+  }
 
   @override
   Widget build(BuildContext context) => ListView(
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 120),
         children: [
-          const PageTitle(
-            'Bonjour Nacef',
+          PageTitle(
+            _greetingTitle,
             subtitle: 'Prêt pour une nouvelle séance ?',
           ),
 
@@ -54,7 +95,13 @@ class HomeScreen extends StatelessWidget {
                     side: const BorderSide(color: Colors.white54),
                   ),
                   onPressed: () {
-                    // Page quiz pas encore créée
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => QuizModuleShell(
+                          userIdProvider: () async => SessionUser.uid,
+                        ),
+                      ),
+                    );
                   },
                   child: const Text('Créer un quiz IA'),
                 ),
