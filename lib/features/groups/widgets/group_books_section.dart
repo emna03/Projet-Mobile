@@ -89,7 +89,7 @@ class _GroupBooksSectionState extends State<GroupBooksSection> {
               ],
             ),
             Text(
-              'Sujet : « ${_vm.query} » · via Google Books',
+              'Sujet : « ${_vm.query} » · via ${_vm.source}',
               style: const TextStyle(fontSize: 12, color: AppColors.muted),
             ),
             if (_searchOpen) ...[
@@ -351,7 +351,7 @@ class _BookDetailsSheetState extends State<_BookDetailsSheet> {
                   child: OutlinedButton.icon(
                     onPressed: _openLink,
                     icon: const Icon(Icons.open_in_new, size: 18),
-                    label: const Text('Voir sur Google Books'),
+                    label: Text('Voir sur ${book.source}'),
                   ),
                 ),
               if (widget.canShare) ...[

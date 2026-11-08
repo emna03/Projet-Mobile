@@ -13,6 +13,9 @@ class Book {
   /// `ALL_PAGES` (lecture gratuite), `PARTIAL` (aperçu) ou `NO_PAGES`.
   final String viewability;
 
+  /// API d'origine : « Google Books » ou « Open Library ».
+  final String source;
+
   const Book({
     required this.id,
     required this.title,
@@ -24,6 +27,7 @@ class Book {
     this.thumbnailUrl,
     this.infoLink,
     this.viewability = 'NO_PAGES',
+    this.source = 'Google Books',
   });
 
   String get authorsLabel => authors.isEmpty ? 'Auteur inconnu' : authors.join(', ');
@@ -60,6 +64,33 @@ class Book {
       thumbnailUrl: thumb?.replaceFirst('http://', 'https://'),
       infoLink: (info['infoLink'] ?? info['canonicalVolumeLink']) as String?,
       viewability: access is Map ? access['viewability'] as String? ?? 'NO_PAGES' : 'NO_PAGES',
+    );
+  }
+
+  /// Construit un livre à partir d'un élément `docs[]` de l'API Open Library
+  /// (`/search.json`). Renvoie `null` si l'élément n'a pas de titre.
+  static Book? fromOpenLibrary(Map<String, dynamic> json) {
+    final title = (json['title'] as String? ?? '').trim();
+    if (title.isEmpty) return null;
+    final key = json['key'] as String? ?? title;
+    final cover = (json['cover_i'] as num?)?.toInt();
+    final year = (json['first_publish_year'] as num?)?.toInt();
+    final languages = List<String>.from(json['language'] as List? ?? const []);
+    return Book(
+      id: key,
+      title: title,
+      authors: List<String>.from(json['author_name'] as List? ?? const []),
+      publishedDate: year?.toString(),
+      pageCount: (json['number_of_pages_median'] as num?)?.toInt(),
+      language: languages.isEmpty ? null : languages.first,
+      thumbnailUrl: cover == null ? null : 'https://covers.openlibrary.org/b/id/$cover-M.jpg',
+      infoLink: key.startsWith('/') ? 'https://openlibrary.org$key' : null,
+      viewability: switch (json['ebook_access']) {
+        'public' => 'ALL_PAGES',
+        'borrowable' => 'PARTIAL',
+        _ => 'NO_PAGES',
+      },
+      source: 'Open Library',
     );
   }
 }

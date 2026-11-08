@@ -2,11 +2,12 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/book.dart';
 
-/// Erreur de l'API Google Books, avec un message en français.
+/// Erreur de recherche de livres, avec un message en français.
 class BooksException implements Exception {
   final String message;
   const BooksException(this.message);
@@ -14,21 +15,25 @@ class BooksException implements Exception {
   String toString() => message;
 }
 
-/// API externe **Google Books** (sans clé) : suggestions de livres liés au
-/// sujet d'un groupe d'étude.
+/// Suggestions de livres liés au sujet d'un groupe d'étude.
 ///
-/// `GET https://www.googleapis.com/books/v1/volumes?q=...`
+/// APIs externes (sans clé) :
+/// 1. **Google Books** — `GET https://www.googleapis.com/books/v1/volumes?q=...`
+/// 2. **Open Library** — `GET https://openlibrary.org/search.json?q=...`,
+///    utilisée automatiquement si Google Books refuse ou échoue.
+///
+/// Pourquoi un relais : sans clé, Google Books décompte toutes les requêtes
+/// anonymes sur un quota journalier commun à toutes les applications ; quand
+/// il est épuisé, l'API répond 429 (« Quota exceeded … Queries per day »).
 class GoogleBooksService {
   GoogleBooksService({http.Client? client}) : _client = client ?? http.Client();
 
   final http.Client _client;
 
-  static const _host = 'www.googleapis.com';
-  static const _path = '/books/v1/volumes';
   static const _timeout = Duration(seconds: 15);
 
-  /// Clé facultative (`--dart-define=GOOGLE_BOOKS_API_KEY=...`) : l'API fonctionne
-  /// sans clé, mais avec un quota limité par adresse IP.
+  /// Clé facultative (`--dart-define=GOOGLE_BOOKS_API_KEY=...`) : avec une clé,
+  /// Google Books utilise le quota de votre propre projet (1 000 requêtes/jour).
   static const _apiKey = String.fromEnvironment('GOOGLE_BOOKS_API_KEY');
 
   /// Résultats déjà chargés (clé = requête normalisée) : pas de nouvel appel
@@ -45,19 +50,66 @@ class GoogleBooksService {
     final cached = _cache[key];
     if (cached != null) return cached;
 
-    final uri = Uri.https(_host, _path, {
+    List<Book> books;
+    try {
+      books = await _searchGoogleBooks(q, maxResults);
+    } on BooksException catch (googleError) {
+      debugPrint('Google Books indisponible (${googleError.message}) → Open Library');
+      try {
+        books = await _searchOpenLibrary(q, maxResults);
+      } on BooksException {
+        throw googleError;
+      }
+    }
+    _cache[key] = books;
+    return books;
+  }
+
+  // ─── Google Books ──────────────────────────────────────────────────────────
+
+  Future<List<Book>> _searchGoogleBooks(String q, int maxResults) async {
+    final uri = Uri.https('www.googleapis.com', '/books/v1/volumes', {
       'q': q,
       'maxResults': '$maxResults',
       'orderBy': 'relevance',
       'printType': 'books',
       if (_apiKey.isNotEmpty) 'key': _apiKey,
     });
+    final json = await _getJson(uri);
+    final items = json is Map ? json['items'] : null;
+    return _unique([
+      if (items is List)
+        for (final item in items)
+          if (item is Map<String, dynamic>) Book.fromJson(item),
+    ]);
+  }
 
+  // ─── Open Library (relais) ─────────────────────────────────────────────────
+
+  Future<List<Book>> _searchOpenLibrary(String q, int maxResults) async {
+    final uri = Uri.https('openlibrary.org', '/search.json', {
+      'q': q,
+      'limit': '$maxResults',
+      'fields': 'key,title,author_name,first_publish_year,cover_i,'
+          'number_of_pages_median,language,ebook_access',
+    });
+    final json = await _getJson(uri);
+    final docs = json is Map ? json['docs'] : null;
+    return _unique([
+      if (docs is List)
+        for (final doc in docs)
+          if (doc is Map<String, dynamic>) Book.fromOpenLibrary(doc),
+    ]);
+  }
+
+  // ─── Commun ────────────────────────────────────────────────────────────────
+
+  Future<Object?> _getJson(Uri uri) async {
     final http.Response response;
     try {
       response = await _client.get(uri).timeout(_timeout);
     } on TimeoutException {
-      throw const BooksException('Google Books met trop de temps à répondre. Réessayez.');
+      throw const BooksException('Le service de livres met trop de temps à répondre. Réessayez.');
     } on SocketException {
       throw const BooksException('Impossible de charger les livres. Vérifiez votre connexion.');
     } on http.ClientException {
@@ -68,28 +120,22 @@ class GoogleBooksService {
       throw const BooksException('Trop de recherches. Patientez quelques instants.');
     }
     if (response.statusCode != 200) {
-      throw BooksException('Google Books est indisponible (code ${response.statusCode}).');
+      throw BooksException('Service de livres indisponible (code ${response.statusCode}).');
     }
-
-    final Object? json;
     try {
-      json = jsonDecode(utf8.decode(response.bodyBytes));
+      return jsonDecode(utf8.decode(response.bodyBytes));
     } on FormatException {
-      throw const BooksException('Réponse de Google Books illisible.');
+      throw const BooksException('Réponse du service de livres illisible.');
     }
-    final items = json is Map ? json['items'] : null;
-    final books = <Book>[];
+  }
+
+  /// Retire les livres sans titre et les éditions en double d'un même titre.
+  static List<Book> _unique(List<Book?> raw) {
     final seen = <String>{};
-    if (items is List) {
-      for (final item in items) {
-        if (item is! Map<String, dynamic>) continue;
-        final book = Book.fromJson(item);
-        // Les éditions multiples d'un même titre sont fréquentes.
-        if (book != null && seen.add(book.title.toLowerCase())) books.add(book);
-      }
-    }
-    _cache[key] = books;
-    return books;
+    return [
+      for (final b in raw)
+        if (b != null && seen.add(b.title.toLowerCase())) b,
+    ];
   }
 
   /// Requête automatique pour un groupe : son nom, ou à défaut les mots

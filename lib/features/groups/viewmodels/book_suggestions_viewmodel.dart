@@ -40,6 +40,9 @@ class BookSuggestionsViewModel extends ChangeNotifier {
   bool get loaded => _loaded;
   bool get isCustomQuery => _query != autoQuery;
 
+  /// API qui a fourni les résultats affichés (Google Books ou Open Library).
+  String get source => _books.isEmpty ? 'Google Books' : _books.first.source;
+
   void _notify() {
     if (!_disposed) notifyListeners();
   }

@@ -107,6 +107,52 @@ void main() {
     });
   });
 
+  group('Relais Open Library (quota Google Books épuisé)', () {
+    test('Google Books répond 429 : résultats d\'Open Library', () async {
+      final hosts = <String>[];
+      final service = GoogleBooksService(
+        client: MockClient((req) async {
+          hosts.add(req.url.host);
+          if (req.url.host == 'www.googleapis.com') return _json({'error': {'code': 429}}, 429);
+          expect(req.url.path, '/search.json');
+          return _json({
+            'docs': [
+              {
+                'key': '/works/OL1W',
+                'title': 'Livre Open Library',
+                'author_name': ['Auteur OL'],
+                'first_publish_year': 2018,
+                'cover_i': 123,
+                'number_of_pages_median': 140,
+                'ebook_access': 'public',
+              },
+            ],
+          });
+        }),
+      );
+
+      final books = await service.search('Spring Boot');
+
+      expect(hosts, ['www.googleapis.com', 'openlibrary.org']);
+      final b = books.single;
+      expect(b.source, 'Open Library');
+      expect(b.title, 'Livre Open Library');
+      expect(b.authorsLabel, 'Auteur OL');
+      expect(b.year, '2018');
+      expect(b.thumbnailUrl, 'https://covers.openlibrary.org/b/id/123-M.jpg');
+      expect(b.infoLink, 'https://openlibrary.org/works/OL1W');
+      expect(b.isFreeToRead, isTrue);
+    });
+
+    test('les deux APIs échouent : message d\'erreur de Google Books', () async {
+      final service = GoogleBooksService(client: MockClient((_) async => _json({}, 429)));
+      await expectLater(
+        service.search('Java'),
+        throwsA(isA<BooksException>().having((e) => e.message, 'message', contains('Trop de recherches'))),
+      );
+    });
+  });
+
   group('Requête construite à partir du groupe', () {
     test('utilise le nom du groupe', () {
       expect(
