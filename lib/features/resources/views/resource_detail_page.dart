@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../../core/config/gemini_config.dart';
+import '../../../core/widgets/gemini_key_dialog.dart';
 import '../../../core/routes/app_routes.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/pdf_storage.dart';
@@ -22,43 +22,10 @@ class _ResourceDetailPageState extends State<ResourceDetailPage> {
   bool showAnswer = false;
   bool aiBusy = false;
 
-  Future<bool> _ensureGeminiKey() async {
-    if (GeminiConfig.isEnabled) return true;
-    final controller = TextEditingController();
-    final key = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Clé API Gemini', style: SM.h(18)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Le résumé et les flashcards sont générés par Gemini. Collez votre clé (Google AI Studio).',
-              style: SM.b(14),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: controller,
-              obscureText: true,
-              decoration: const InputDecoration(labelText: 'Clé API'),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler')),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            child: const Text('Enregistrer'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    if (key == null || key.isEmpty) return false;
-    GeminiConfig.sessionApiKey = key;
-    return true;
-  }
+  Future<bool> _ensureGeminiKey() => ensureGeminiKey(
+        context,
+        reason: 'Le résumé et les flashcards sont générés par Gemini. Collez votre clé (Google AI Studio).',
+      );
 
   Future<void> _summary(Resource r) async {
     final vm = ResourceScope.of(context);
@@ -137,6 +104,29 @@ class _ResourceDetailPageState extends State<ResourceDetailPage> {
       return Scaffold(
         appBar: AppBar(backgroundColor: SM.bg),
         body: const Center(child: Text('Ressource introuvable')),
+      );
+    }
+    if (!vm.canView(r)) {
+      return Scaffold(
+        appBar: AppBar(backgroundColor: SM.bg),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(28),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              const Icon(Icons.lock_outline, size: 48, color: SM.muted),
+              const SizedBox(height: 16),
+              Text('Accès réservé', style: SM.h(18), textAlign: TextAlign.center),
+              const SizedBox(height: 8),
+              Text(
+                r.visibility == ResourceVisibility.group
+                    ? 'Cette ressource est réservée aux membres du groupe${r.groupName == null ? '' : ' « ${r.groupName} »'}.'
+                    : 'Cette ressource est privée.',
+                style: SM.b(14, color: SM.muted),
+                textAlign: TextAlign.center,
+              ),
+            ]),
+          ),
+        ),
       );
     }
     final cards = vm.flashcards.where((c) => c.resourceId == r.id).toList();

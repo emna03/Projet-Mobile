@@ -29,23 +29,23 @@ class LocalDatabase {
 
       // Nouvelle installation
       onCreate: (db, version) async {
-        await db.execute('''
-          CREATE TABLE users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            nom TEXT NOT NULL,
-            prenom TEXT NOT NULL,
-            telephone TEXT NOT NULL,
-            email TEXT NOT NULL UNIQUE,
-            role TEXT NOT NULL,
-            photoPath TEXT,
-            documentUrl TEXT,
-            statut TEXT NOT NULL DEFAULT 'active'
-          )
-        ''');
+        await _createUsersTable(db);
       },
 
       // Migration des anciennes versions
       onUpgrade: (db, oldVersion, newVersion) async {
+        // Collision d'intégration : l'ancien module Groupes
+        // (Projet-Mobile-version-1, même identifiant d'application) utilisait
+        // aussi `studymate.db` (versions 1-2) avec une table `users`
+        // incompatible (id TEXT, name…). On ne supprime rien : ses tables
+        // restent dans le fichier et sa table `users` est renommée, puis la
+        // table des profils de ce module est créée.
+        if (await _isLegacyGroupsSchema(db)) {
+          await db.execute('ALTER TABLE users RENAME TO legacy_group_users');
+          await _createUsersTable(db);
+          return;
+        }
+
         if (oldVersion < 2) {
           await db.execute('''
             CREATE TABLE users_new (
@@ -81,5 +81,29 @@ class LocalDatabase {
         }
       },
     );
+  }
+
+  static Future<void> _createUsersTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nom TEXT NOT NULL,
+        prenom TEXT NOT NULL,
+        telephone TEXT NOT NULL,
+        email TEXT NOT NULL UNIQUE,
+        role TEXT NOT NULL,
+        photoPath TEXT,
+        documentUrl TEXT,
+        statut TEXT NOT NULL DEFAULT 'active'
+      )
+    ''');
+  }
+
+  /// `true` si `users` provient de l'ancien module Groupes (pas de colonne
+  /// `nom`).
+  static Future<bool> _isLegacyGroupsSchema(Database db) async {
+    final cols = await db.rawQuery('PRAGMA table_info(users)');
+    if (cols.isEmpty) return false;
+    return !cols.any((c) => c['name'] == 'nom');
   }
 }

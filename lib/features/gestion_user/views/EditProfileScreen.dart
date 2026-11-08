@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../../core/constants/session_user.dart';
 import '../../../core/utils/profile_photo.dart';
 import '../../../core/theme/app_theme.dart';
 import '../models/user.dart';
@@ -197,6 +198,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         email: currentUser.email,
         role: currentUser.role,
         photoPath: _photoPath,
+        // Conserver le justificatif enseignant (il était effacé à chaque
+        // modification du profil).
+        documentUrl: currentUser.documentUrl,
         statut: currentUser.statut,
       );
 
@@ -214,6 +218,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
       // Met à jour la photo utilisée par l'application.
       profilePhotoPath.value = _photoPath;
+
+      // Nouveau nom / photo visibles par les membres des groupes.
+      SessionUser.syncProfile();
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(

@@ -318,6 +318,8 @@ class _LoginScreenState extends State<LoginScreen>
 
   Future<void> _enter() async {
     await SessionUser.refreshRole();
+    // Profil public partagé avec les membres des groupes (non bloquant).
+    SessionUser.syncProfile();
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(

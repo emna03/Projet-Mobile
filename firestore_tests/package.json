@@ -1,0 +1,14 @@
+{
+  "name": "studymate-firestore-rules-tests",
+  "private": true,
+  "type": "module",
+  "description": "Tests des règles Firestore (émulateur local, aucun déploiement).",
+  "scripts": {
+    "test": "firebase emulators:exec --only firestore --project demo-studymate \"node rules.test.mjs\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^4.0.0",
+    "firebase": "^11.0.0",
+    "firebase-tools": "^13.0.0"
+  }
+}

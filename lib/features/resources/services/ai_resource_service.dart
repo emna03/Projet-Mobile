@@ -1,9 +1,11 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:firebase_ai/firebase_ai.dart' show Schema;
 import 'package:http/http.dart' as http;
 
 import '../../../core/config/gemini_config.dart';
+import '../../../core/services/firebase_gemini.dart';
 import '../../../core/utils/pdf_storage.dart';
 import '../models/resource.dart';
 import 'course_text.dart';
@@ -159,6 +161,14 @@ ${doc.text.isEmpty ? '' : '\nCOURS :\n${doc.text}'}
     },
   };
 
+  /// Équivalent Firebase AI du responseSchema ci-dessus.
+  static final Schema _flashcardSchema = Schema.array(
+    items: Schema.object(properties: {
+      'question': Schema.string(),
+      'answer': Schema.string(),
+    }),
+  );
+
   static const Map<String, Object?> _defaultGenConfig = {
     'temperature': 0.4,
     'maxOutputTokens': 4096,
@@ -176,6 +186,28 @@ ${doc.text.isEmpty ? '' : '\nCOURS :\n${doc.text}'}
     Uint8List? inlineBytes,
     String? inlineMime,
   }) async {
+    if (GeminiConfig.useFirebase) {
+      // Aucune clé : Gemini via Firebase AI Logic (mêmes prompts, mêmes
+      // réglages, même format JSON pour les flashcards).
+      final cfg = generationConfig ?? _defaultGenConfig;
+      try {
+        return await FirebaseGemini.generate(
+          models: GeminiConfig.models,
+          prompt: prompt,
+          systemInstruction: systemInstruction,
+          temperature: (cfg['temperature'] as num?)?.toDouble(),
+          maxOutputTokens: cfg['maxOutputTokens'] as int?,
+          inlineBytes: inlineBytes,
+          inlineMime: inlineMime,
+          responseMimeType: cfg['responseMimeType'] as String?,
+          responseSchema:
+              identical(generationConfig, _flashcardGenConfig) ? _flashcardSchema : null,
+        );
+      } on FirebaseGeminiException catch (e) {
+        throw AiException(e.message);
+      }
+    }
+
     final skipped = <String>{};
     for (var pass = 0; pass < 3; pass++) {
       for (final model in GeminiConfig.models) {

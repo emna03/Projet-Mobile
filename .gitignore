@@ -49,3 +49,6 @@ app.*.map.json
 
 # Secrets locaux (flutter run --dart-define-from-file=dart_defines.json)
 dart_defines.json
+
+# Dépendances des tests de règles Firestore
+/firestore_tests/node_modules/

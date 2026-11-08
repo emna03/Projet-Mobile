@@ -4,16 +4,20 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../../../core/constants/session_user.dart';
-import '../../../core/constants/groups.dart';
+import '../../../core/services/group_membership.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/pdf_storage.dart';
 import '../../../core/widgets/sm_widgets.dart';
 import '../../../core/widgets/resource_scope.dart';
 import '../models/resource.dart';
+import '../viewmodels/resource_viewmodel.dart';
 
 class ResourceFormPage extends StatefulWidget {
   final Resource? existing;
-  const ResourceFormPage({super.key, this.existing});
+
+  /// Groupe présélectionné (création depuis la page d'un groupe).
+  final String? initialGroupId;
+  const ResourceFormPage({super.key, this.existing, this.initialGroupId});
 
   @override
   State<ResourceFormPage> createState() => _ResourceFormPageState();
@@ -27,9 +31,10 @@ class _ResourceFormPageState extends State<ResourceFormPage> {
   late final price = TextEditingController(
       text: widget.existing == null || widget.existing!.isFree ? '10' : widget.existing!.price.toStringAsFixed(0));
 
-  late ResourceVisibility visibility = widget.existing?.visibility ?? ResourceVisibility.public;
+  late ResourceVisibility visibility = widget.existing?.visibility ??
+      (widget.initialGroupId != null ? ResourceVisibility.group : ResourceVisibility.public);
   late bool isFree = widget.existing?.isFree ?? true;
-  late String? groupId = widget.existing?.groupId ?? groups.first.id;
+  late String? groupId = widget.existing?.groupId ?? widget.initialGroupId;
   late String? pdfPath = widget.existing?.pdfPath;
   late String? pdfName = widget.existing?.pdfName;
   late Uint8List? pdfBytes = widget.existing?.pdfBytes;
@@ -108,9 +113,12 @@ class _ResourceFormPageState extends State<ResourceFormPage> {
       );
       return;
     }
-    Group? group;
-    for (final g in groups) {
-      if (g.id == groupId) group = g;
+    final group = _groupOptions(vm).where((g) => g.id == groupId).firstOrNull;
+    if (visibility == ResourceVisibility.group && group == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Choisissez le groupe avec lequel partager la ressource.')),
+      );
+      return;
     }
     final resource = Resource(
       id: widget.existing?.id,
@@ -134,12 +142,49 @@ class _ResourceFormPageState extends State<ResourceFormPage> {
       createdAt: widget.existing?.createdAt ?? DateTime.now().millisecondsSinceEpoch,
       isFavorite: widget.existing?.isFavorite ?? false,
     );
+    try {
+      await vm.save(resource);
+    } on StateError catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      return;
+    }
+    // Ancien fichier supprimé seulement une fois l'enregistrement réussi.
     if (_previousPdfPath != null && _previousPdfPath != pdfPath) {
       await PdfStorage.delete(_previousPdfPath);
     }
-    await vm.save(resource);
     if (!mounted) return;
     Navigator.pop(context);
+  }
+
+  /// Groupes proposés : ceux dont l'utilisateur est membre, plus le groupe
+  /// déjà associé à la ressource modifiée (pour ne pas le perdre en silence).
+  List<GroupRef> _groupOptions(ResourceViewModel vm) {
+    final options = [...vm.selectableGroups];
+    final existingId = widget.existing?.groupId;
+    if (existingId != null && options.every((g) => g.id != existingId)) {
+      options.add(GroupRef(existingId, widget.existing?.groupName ?? 'Groupe actuel'));
+    }
+    return options;
+  }
+
+  Widget _groupSelector(ResourceViewModel vm) {
+    final options = _groupOptions(vm);
+    if (options.isEmpty) {
+      return Text(
+        'Vous n\'êtes membre d\'aucun groupe. Rejoignez ou créez un groupe dans l\'onglet Groupes pour y partager une ressource.',
+        style: SM.b(13, color: SM.danger),
+      );
+    }
+    final selected = options.any((g) => g.id == groupId) ? groupId : null;
+    return DropdownButtonFormField<String>(
+      initialValue: selected,
+      decoration: const InputDecoration(labelText: 'Partager avec le groupe'),
+      items: [
+        for (final g in options) DropdownMenuItem(value: g.id, child: Text(g.name)),
+      ],
+      onChanged: (v) => setState(() => groupId = v),
+    );
   }
 
   @override
@@ -192,14 +237,7 @@ class _ResourceFormPageState extends State<ResourceFormPage> {
           ]),
           if (visibility == ResourceVisibility.group) ...[
             const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              initialValue: groupId,
-              decoration: const InputDecoration(labelText: 'Partager avec'),
-              items: [
-                for (final g in groups) DropdownMenuItem(value: g.id, child: Text(g.name)),
-              ],
-              onChanged: (v) => setState(() => groupId = v),
-            ),
+            _groupSelector(ResourceScope.of(context)),
           ],
           const SizedBox(height: 16),
           Text('Prix', style: SM.b(14, w: FontWeight.w600)),

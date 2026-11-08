@@ -1,4 +1,6 @@
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -7,6 +9,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'firebase_options.dart';
 import 'core/theme/app_theme.dart';
 import 'core/constants/session_user.dart';
+import 'core/services/app_services.dart';
 import 'core/services/biometric_service.dart';
 import 'core/utils/database_factory.dart';
 import 'core/routes/app_routes.dart';
@@ -14,6 +17,9 @@ import 'core/widgets/resource_scope.dart';
 import 'features/gestion_user/views/login_screen.dart';
 import 'features/gestion_user/views/profile_screen.dart';
 import 'features/gestion_user/repositories/user_repository.dart';
+import 'features/groups/viewmodels/group_viewmodel.dart';
+import 'features/groups/views/groups_list_page.dart';
+import 'features/groups/widgets/join_requests_sheet.dart';
 import 'features/home/views/home_screen.dart';
 import 'features/resources/models/resource.dart';
 import 'features/resources/views/resource_detail_page.dart';
@@ -31,6 +37,9 @@ Future<void> main() async {
 
   await GoogleSignIn.instance.initialize();
 
+  // Modules partagés (groupes ↔ ressources), liés à la session Firebase.
+  initAppServices();
+
   runApp(const StudyMateApp());
 }
 
@@ -47,9 +56,15 @@ class StudyMateApp extends StatelessWidget {
         AppRoutes.resourceDetail: (context) => ResourceDetailPage(
               id: ModalRoute.of(context)!.settings.arguments! as int,
             ),
-        AppRoutes.resourceForm: (context) => ResourceFormPage(
-              existing: ModalRoute.of(context)!.settings.arguments as Resource?,
-            ),
+        // Argument : la ressource à modifier, ou l'identifiant du groupe
+        // présélectionné (partage depuis la page d'un groupe).
+        AppRoutes.resourceForm: (context) {
+          final arg = ModalRoute.of(context)!.settings.arguments;
+          return ResourceFormPage(
+            existing: arg is Resource ? arg : null,
+            initialGroupId: arg is String ? arg : null,
+          );
+        },
       },
       builder: (context, child) => ResourceScope(
         notifier: resourceViewModel,
@@ -205,6 +220,10 @@ class _AuthGateState extends State<AuthGate>
     }
 
     SessionUser.role = localUser.role;
+
+    // Profil public (nom, rôle, photo) visible par les membres des groupes.
+    // Non bloquant : un échec réseau ne doit pas empêcher l'accès.
+    SessionUser.syncProfile();
 
     return true;
   }
@@ -568,12 +587,13 @@ class Shell extends StatefulWidget {
 class _ShellState extends State<Shell> {
   late int index = widget.initial;
 
-  final List<Widget> pages = const [
-    HomeScreen(),
-    ResourcesPage(),
-    Center(child: Text('Groupes')),
-    Center(child: Text('Séances')),
-    ProfileScreen(),
+  final List<Widget> pages = [
+    const HomeScreen(),
+    const ResourcesPage(),
+    // Module Groupes + Chat (même utilisateur Firebase que le reste).
+    GroupsListPage(viewModel: groupViewModel, bottomInset: 84),
+    const Center(child: Text('Séances')),
+    const ProfileScreen(),
   ];
 
   final List<(IconData, String)> tabs = const [
@@ -583,6 +603,43 @@ class _ShellState extends State<Shell> {
     (Icons.calendar_month, 'Séances'),
     (Icons.person, 'Profil'),
   ];
+
+  StreamSubscription<GroupNotice>? _noticeSub;
+
+  @override
+  void initState() {
+    super.initState();
+    // Notifications en temps réel : nouvelle demande d'adhésion reçue,
+    // demande acceptée / refusée.
+    _noticeSub = groupViewModel.notices.listen(_showNotice);
+  }
+
+  @override
+  void dispose() {
+    _noticeSub?.cancel();
+    super.dispose();
+  }
+
+  void _showNotice(GroupNotice notice) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(SnackBar(
+      duration: const Duration(seconds: 6),
+      behavior: SnackBarBehavior.floating,
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 96),
+      content: Row(children: [
+        const Icon(Icons.notifications_active_outlined, color: Colors.white),
+        const SizedBox(width: 10),
+        Expanded(child: Text(notice.message)),
+      ]),
+      action: notice.request == null
+          ? null
+          : SnackBarAction(
+              label: 'Voir',
+              onPressed: () => showJoinRequestsSheet(context, groupViewModel),
+            ),
+    ));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -624,12 +681,11 @@ class _ShellState extends State<Shell> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(
-                          tabs[i].$1,
-                          size: 20,
-                          color: active
-                              ? Colors.white
-                              : SM.muted,
+                        _TabIcon(
+                          icon: tabs[i].$1,
+                          color: active ? Colors.white : SM.muted,
+                          // Onglet Groupes : nombre de demandes d'adhésion.
+                          showRequests: i == 2,
                         ),
                         const SizedBox(height: 2),
                         Text(
@@ -651,6 +707,36 @@ class _ShellState extends State<Shell> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Icône d'onglet, avec le nombre de demandes d'adhésion sur « Groupes ».
+class _TabIcon extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final bool showRequests;
+
+  const _TabIcon({
+    required this.icon,
+    required this.color,
+    this.showRequests = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final base = Icon(icon, size: 20, color: color);
+    if (!showRequests) return base;
+    return ListenableBuilder(
+      listenable: groupViewModel,
+      builder: (context, _) {
+        final count = groupViewModel.pendingRequestCount;
+        return Badge(
+          isLabelVisible: count > 0,
+          label: Text('$count'),
+          child: base,
+        );
+      },
     );
   }
 }
