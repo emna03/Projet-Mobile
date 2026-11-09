@@ -1,13 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:studymate/features/auth/current_user.dart';
 import 'package:studymate/features/seances/models/seance.dart';
+import 'package:studymate/features/seances/seance_user.dart';
 import 'package:studymate/theme/app_colors.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class ProposerSeancePage extends StatefulWidget {
-  const ProposerSeancePage({super.key, this.seance});
+  const ProposerSeancePage({
+    super.key,
+    required this.currentUser,
+    this.seance,
+  });
 
+  final SeanceUser currentUser;
   final Seance? seance;
 
   @override
@@ -37,7 +42,7 @@ class _ProposerSeancePageState extends State<ProposerSeancePage> {
     _subject = TextEditingController(text: seance?.subject ?? '');
     _title = TextEditingController(text: seance?.title ?? '');
     _host = TextEditingController(
-      text: seance?.host ?? AuthSession.instance.user.displayName,
+      text: seance?.host ?? widget.currentUser.displayName,
     );
     _place = TextEditingController(
       text: seance?.place ??
@@ -339,7 +344,7 @@ class _ProposerSeancePageState extends State<ProposerSeancePage> {
     final existing = widget.seance;
     final seance = Seance(
       id: existing?.id ?? DateTime.now().microsecondsSinceEpoch.toString(),
-      ownerId: existing?.ownerId ?? AuthSession.instance.user.id,
+      ownerId: existing?.ownerId ?? widget.currentUser.id,
       subject: _subject.text.trim(),
       title: _title.text.trim(),
       host: _host.text.trim(),

@@ -1,17 +1,18 @@
 import 'package:flutter/material.dart';
-import 'package:studymate/features/auth/current_user.dart';
 import 'package:studymate/features/seances/models/seance.dart';
+import 'package:studymate/features/seances/seance_user.dart';
 import 'package:studymate/features/seances/seances_database.dart';
 
 /// Séances de révision stored in SQLite through sqflite.
 class SeancesStore extends ChangeNotifier {
-  SeancesStore({SeancesDatabase? database, AuthSession? session})
-      : _database = database ?? SeancesDatabase(),
-        _session = session ?? AuthSession.instance {
-    _session.addListener(notifyListeners);
-  }
+  SeancesStore({
+    SeancesDatabase? database,
+    Future<SeanceUser> Function()? loadUser,
+  })  : _database = database ?? SeancesDatabase(),
+        _loadUser = loadUser ?? loadCurrentSeanceUser;
 
-  final AuthSession _session;
+  final Future<SeanceUser> Function() _loadUser;
+  SeanceUser _user = SeanceUser.anonymous;
 
   final SeancesDatabase _database;
   final List<Seance> _items = [];
@@ -35,8 +36,10 @@ class SeancesStore extends ChangeNotifier {
   Future<void> load() async {
     final request = ++_request;
     try {
+      final currentUser = await _loadUser();
       final rows = await _database.readAll();
       if (request != _request) return;
+      _user = currentUser;
       _items
         ..clear()
         ..addAll(rows);
@@ -81,17 +84,12 @@ class SeancesStore extends ChangeNotifier {
     await _database.update(next);
   }
 
-  AppUser get user => _session.user;
+  SeanceUser get user => _user;
 
   bool isOwner(Seance seance) => user.owns(seance.ownerId);
 
-  @override
-  void dispose() {
-    _session.removeListener(notifyListeners);
-    super.dispose();
-  }
-
   Future<bool> add(Seance seance) async {
+    if (user.id.isEmpty) return false;
     final owned = seance.copyWith(ownerId: user.id);
     _request++;
     try {

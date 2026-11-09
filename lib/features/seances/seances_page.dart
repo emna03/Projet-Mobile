@@ -18,9 +18,9 @@ class SeancesPage extends StatelessWidget {
       builder: (context, _) {
         final sessions = store.items;
         return ListView(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
           children: [
-            const StudyHeader(),
+            StudyHeader(initials: store.user.initials),
             const SizedBox(height: 26),
             const Text(
               'Tes prochaines séances',
@@ -110,7 +110,9 @@ class SeancesPage extends StatelessWidget {
 
   Future<void> _openPropose(BuildContext context) async {
     final created = await Navigator.of(context).push<Seance>(
-      MaterialPageRoute(builder: (_) => const ProposerSeancePage()),
+      MaterialPageRoute(
+        builder: (_) => ProposerSeancePage(currentUser: store.user),
+      ),
     );
     if (created != null) {
       final saved = await store.add(created);
@@ -126,7 +128,12 @@ class SeancesPage extends StatelessWidget {
       return;
     }
     final updated = await Navigator.of(context).push<Seance>(
-      MaterialPageRoute(builder: (_) => ProposerSeancePage(seance: seance)),
+      MaterialPageRoute(
+        builder: (_) => ProposerSeancePage(
+          currentUser: store.user,
+          seance: seance,
+        ),
+      ),
     );
     if (updated != null) {
       final saved = await store.update(updated);

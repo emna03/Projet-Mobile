@@ -2,9 +2,23 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
-import 'package:studymate/features/auth/current_user.dart';
+import 'package:studymate/features/seances/seance_user.dart';
+import 'package:studymate/features/seances/seances_page.dart';
 import 'package:studymate/features/seances/seances_store.dart';
-import 'package:studymate/main.dart';
+
+const _alex = SeanceUser(
+  id: 'user-ab',
+  displayName: 'Alex Benali',
+  initials: 'AB',
+);
+const _sarah = SeanceUser(
+  id: 'user-sarah',
+  displayName: 'Sarah Ben Ali',
+  initials: 'SB',
+);
+
+SeancesStore _storeFor(SeanceUser user) =>
+    SeancesStore(loadUser: () async => user);
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -12,7 +26,6 @@ void main() {
   databaseFactory = databaseFactoryFfi;
 
   setUp(() async {
-    AuthSession.instance.signIn(demoUsers.first);
     final path = p.join(await getDatabasesPath(), 'studymate_seances.db');
     await deleteDatabase(path);
   });
@@ -25,14 +38,16 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pumpWidget(const StudyMateApp());
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 400)),
+    final store = _storeFor(_alex);
+    await tester.runAsync(store.load);
+    await tester.pumpWidget(
+      MaterialApp(home: Scaffold(body: SeancesPage(store: store))),
     );
     await tester.pumpAndSettle();
 
     expect(find.text('Tes prochaines séances'), findsOneWidget);
     expect(find.text('Connecté en tant que Alex Benali'), findsOneWidget);
+    expect(find.text('AB'), findsOneWidget);
     expect(find.text('Révisions Flutter & Dart'), findsOneWidget);
     expect(find.text('Ta séance'), findsOneWidget);
     expect(find.byIcon(Icons.more_horiz_rounded), findsOneWidget);
@@ -58,21 +73,10 @@ void main() {
     await tester.pump();
 
     expect(find.text('Réservé'), findsNWidgets(2));
-
-    await tester.tap(find.text('Toutes').first);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('AB'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Sarah Ben Ali'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Connecté en tant que Sarah Ben Ali'), findsOneWidget);
-    expect(find.text('Ta séance'), findsOneWidget);
-    expect(find.byIcon(Icons.more_horiz_rounded), findsOneWidget);
   });
 
   test('a user cannot update or delete another student seance', () async {
-    final store = SeancesStore();
+    final store = _storeFor(_alex);
     await store.load();
 
     final foreign = store.items.firstWhere((seance) => seance.id == 'docker');
@@ -92,5 +96,22 @@ void main() {
       store.items.firstWhere((seance) => seance.id == 'flutter').title,
       'Updated',
     );
+  });
+
+  test('ownership follows the signed-in account', () async {
+    final store = _storeFor(_sarah);
+    await store.load();
+
+    expect(store.user.displayName, 'Sarah Ben Ali');
+    expect(store.items.where(store.isOwner), hasLength(1));
+  });
+
+  test('a signed-out user owns nothing and cannot publish', () async {
+    final store = _storeFor(SeanceUser.anonymous);
+    await store.load();
+
+    final seance = store.items.first;
+    expect(store.items.where(store.isOwner), isEmpty);
+    expect(await store.add(seance), isFalse);
   });
 }
