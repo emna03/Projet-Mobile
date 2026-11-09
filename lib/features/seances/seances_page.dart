@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:studymate/features/meet/meet_manage_sheet.dart';
+import 'package:studymate/features/meet/meet_space.dart';
 import 'package:studymate/features/seances/models/seance.dart';
 import 'package:studymate/features/seances/proposer_seance_page.dart';
 import 'package:studymate/features/seances/seances_store.dart';
@@ -51,14 +53,9 @@ class SeancesPage extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 22),
-            _ProposeButton(
-              onPressed: () => _openPropose(context),
-            ),
+            _ProposeButton(onPressed: () => _openPropose(context)),
             const SizedBox(height: 16),
-            _FormatFilters(
-              selected: store.format,
-              onSelected: store.setFormat,
-            ),
+            _FormatFilters(selected: store.format, onSelected: store.setFormat),
             const SizedBox(height: 18),
             if (store.error != null)
               Padding(
@@ -92,13 +89,21 @@ class SeancesPage extends StatelessWidget {
                 SeanceCard(
                   seance: seance,
                   isOwner: store.isOwner(seance),
-                  onReserve: () => store.toggleReservation(seance.id),
+                  onReserve: () => _reserve(context, seance),
                   onEdit: store.isOwner(seance)
                       ? () => _openEdit(context, seance)
                       : null,
                   onDelete: store.isOwner(seance)
                       ? () => _confirmDelete(context, seance)
                       : null,
+                  onManageMeet:
+                      store.isOwner(seance) && isGoogleMeetLink(seance.place)
+                      ? () => _manageMeet(context, seance)
+                      : null,
+                  onToggleCalendar: store.canSyncCalendar(seance)
+                      ? () => _toggleCalendar(context, seance)
+                      : null,
+                  calendarBusy: store.isCalendarBusy(seance.id),
                 ),
                 const SizedBox(height: 14),
               ],
@@ -140,7 +145,38 @@ class SeancesPage extends StatelessWidget {
       if (!saved && context.mounted) {
         _showDenied(context, 'Tu ne peux modifier que tes propres séances.');
       }
+      if (context.mounted) _showCalendarWarning(context);
     }
+  }
+
+  Future<void> _reserve(BuildContext context, Seance seance) async {
+    await store.toggleReservation(seance.id);
+    if (context.mounted) _showCalendarWarning(context);
+  }
+
+  Future<void> _toggleCalendar(BuildContext context, Seance seance) async {
+    final result = await store.toggleCalendar(seance.id);
+    if (!context.mounted) return;
+    _showDenied(context, result.message);
+  }
+
+  /// Signale un échec de Google Agenda survenu après une action déjà réussie.
+  void _showCalendarWarning(BuildContext context) {
+    final warning = store.takeCalendarWarning();
+    if (warning != null) _showDenied(context, warning);
+  }
+
+  Future<void> _manageMeet(BuildContext context, Seance seance) async {
+    if (!store.isOwner(seance)) {
+      _showDenied(context, 'Tu ne peux gérer que le Meet de tes séances.');
+      return;
+    }
+    await showMeetManager(
+      context: context,
+      seance: seance,
+      onSave: store.update,
+    );
+    if (context.mounted) _showCalendarWarning(context);
   }
 
   Future<void> _confirmDelete(BuildContext context, Seance seance) async {
@@ -172,11 +208,13 @@ class SeancesPage extends StatelessWidget {
       if (!deleted && context.mounted) {
         _showDenied(context, 'Tu ne peux supprimer que tes propres séances.');
       }
+      if (context.mounted) _showCalendarWarning(context);
     }
   }
 
   void _showDenied(BuildContext context, String message) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 }
 
@@ -213,10 +251,7 @@ class _ProposeButton extends StatelessWidget {
 }
 
 class _FormatFilters extends StatelessWidget {
-  const _FormatFilters({
-    required this.selected,
-    required this.onSelected,
-  });
+  const _FormatFilters({required this.selected, required this.onSelected});
 
   final SessionFormat? selected;
   final ValueChanged<SessionFormat?> onSelected;

@@ -59,7 +59,7 @@ class SeancesDatabase {
     final path = p.join(directory, fileName);
     return openDatabase(
       path,
-      version: 2,
+      version: 4,
       onCreate: (db, version) async {
         await db.execute(_createTableSql);
         for (final seance in _sampleSeances) {
@@ -102,6 +102,18 @@ class SeancesDatabase {
             );
           }
         }
+        if (oldVersion < 3) {
+          await db.execute(
+            'ALTER TABLE seances ADD COLUMN meet_space_name TEXT',
+          );
+          await db.execute('ALTER TABLE seances ADD COLUMN meet_code TEXT');
+          await db.execute('ALTER TABLE seances ADD COLUMN meet_access TEXT');
+        }
+        if (oldVersion < 4) {
+          await db.execute(
+            'ALTER TABLE seances ADD COLUMN calendar_event_id TEXT',
+          );
+        }
       },
     );
   }
@@ -122,7 +134,11 @@ const _createTableSql = '''
     seats_left INTEGER NOT NULL,
     reserved INTEGER NOT NULL,
     free INTEGER NOT NULL,
-    price_label TEXT
+    price_label TEXT,
+    meet_space_name TEXT,
+    meet_code TEXT,
+    meet_access TEXT,
+    calendar_event_id TEXT
   )
 ''';
 

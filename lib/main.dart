@@ -2,7 +2,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 
 import 'firebase_options.dart';
 import 'core/theme/app_theme.dart';
@@ -11,6 +10,7 @@ import 'features/gestion_user/views/login_screen.dart';
 import 'features/gestion_user/views/profile_screen.dart';
 import 'features/gestion_user/repositories/user_repository.dart';
 import 'features/home/views/home_screen.dart';
+import 'features/meet/google_meet_auth.dart';
 import 'features/seances/seances_page.dart';
 import 'features/seances/seances_store.dart';
 
@@ -21,7 +21,7 @@ Future<void> main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  await GoogleSignIn.instance.initialize();
+  await GoogleMeetAuth.instance.ensureInitialized();
 
   runApp(const StudyMateApp());
 }

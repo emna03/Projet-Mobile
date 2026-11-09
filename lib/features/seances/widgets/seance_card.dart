@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:studymate/features/meet/meet_space.dart';
 import 'package:studymate/features/seances/models/seance.dart';
 import 'package:studymate/theme/app_colors.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -11,6 +13,9 @@ class SeanceCard extends StatelessWidget {
     required this.onReserve,
     this.onEdit,
     this.onDelete,
+    this.onManageMeet,
+    this.onToggleCalendar,
+    this.calendarBusy = false,
   });
 
   final Seance seance;
@@ -18,6 +23,11 @@ class SeanceCard extends StatelessWidget {
   final VoidCallback onReserve;
   final VoidCallback? onEdit;
   final VoidCallback? onDelete;
+  final VoidCallback? onManageMeet;
+
+  /// Null quand la séance ne peut pas encore aller dans l'agenda.
+  final VoidCallback? onToggleCalendar;
+  final bool calendarBusy;
 
   @override
   Widget build(BuildContext context) {
@@ -53,12 +63,10 @@ class SeanceCard extends StatelessWidget {
                 ),
               ),
               const Spacer(),
-              if (isOwner) ...[
-                const _OwnerBadge(),
-                const SizedBox(width: 8),
-              ],
+              if (isOwner) ...[const _OwnerBadge(), const SizedBox(width: 8)],
               _ModeBadge(online: seance.isOnline),
-              if (isOwner && (onEdit != null || onDelete != null))
+              if (isOwner &&
+                  (onEdit != null || onDelete != null || onManageMeet != null))
                 PopupMenuButton<String>(
                   padding: EdgeInsets.zero,
                   icon: const Icon(
@@ -67,6 +75,7 @@ class SeanceCard extends StatelessWidget {
                   ),
                   onSelected: (value) {
                     if (value == 'edit') onEdit?.call();
+                    if (value == 'meet') onManageMeet?.call();
                     if (value == 'delete') onDelete?.call();
                   },
                   itemBuilder: (context) => [
@@ -74,6 +83,11 @@ class SeanceCard extends StatelessWidget {
                       const PopupMenuItem(
                         value: 'edit',
                         child: Text('Modifier'),
+                      ),
+                    if (onManageMeet != null)
+                      const PopupMenuItem(
+                        value: 'meet',
+                        child: Text('Gérer Google Meet'),
                       ),
                     if (onDelete != null)
                       const PopupMenuItem(
@@ -107,7 +121,11 @@ class SeanceCard extends StatelessWidget {
           const SizedBox(height: 14),
           Row(
             children: [
-              const Icon(Icons.calendar_today_outlined, size: 16, color: AppColors.subtle),
+              const Icon(
+                Icons.calendar_today_outlined,
+                size: 16,
+                color: AppColors.subtle,
+              ),
               const SizedBox(width: 6),
               Text(
                 formatSeanceDay(seance.date),
@@ -118,7 +136,11 @@ class SeanceCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 14),
-              const Icon(Icons.schedule_rounded, size: 16, color: AppColors.subtle),
+              const Icon(
+                Icons.schedule_rounded,
+                size: 16,
+                color: AppColors.subtle,
+              ),
               const SizedBox(width: 6),
               Text(
                 '${formatSeanceTime(seance.start)} – ${formatSeanceTime(seance.end)}',
@@ -132,6 +154,14 @@ class SeanceCard extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           _PlaceLine(seance: seance, icon: placeIcon),
+          if (onToggleCalendar != null) ...[
+            const SizedBox(height: 6),
+            _CalendarButton(
+              inCalendar: seance.inCalendar,
+              busy: calendarBusy,
+              onPressed: calendarBusy ? null : onToggleCalendar,
+            ),
+          ],
           const SizedBox(height: 16),
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
@@ -189,32 +219,68 @@ class _PlaceLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final link = Uri.tryParse(seance.place.trim());
-    final canJoin = seance.isOnline &&
-        link != null &&
-        link.scheme == 'https' &&
-        link.host == 'meet.google.com';
+    final code = seance.meetCode ?? meetingCodeFromLink(seance.place);
+    final canJoin = seance.isOnline && code != null && link != null;
 
-    return InkWell(
-      onTap: canJoin
-          ? () => launchUrl(link, mode: LaunchMode.externalApplication)
-          : null,
-      borderRadius: BorderRadius.circular(8),
-      child: Row(
-        children: [
-          Icon(icon, size: 16, color: AppColors.subtle),
-          const SizedBox(width: 6),
-          Expanded(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          onTap: canJoin
+              ? () => launchUrl(link, mode: LaunchMode.externalApplication)
+              : null,
+          borderRadius: BorderRadius.circular(8),
+          child: Row(
+            children: [
+              Icon(icon, size: 16, color: AppColors.subtle),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  canJoin ? 'Rejoindre Google Meet' : seance.place,
+                  style: TextStyle(
+                    color: canJoin
+                        ? AppColors.primary
+                        : const Color(0xFF6F6A7D),
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              if (canJoin)
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  tooltip: 'Copier le lien',
+                  onPressed: () async {
+                    await Clipboard.setData(
+                      ClipboardData(text: seance.place.trim()),
+                    );
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Lien Google Meet copié.')),
+                    );
+                  },
+                  icon: const Icon(
+                    Icons.copy_rounded,
+                    size: 16,
+                    color: AppColors.primary,
+                  ),
+                ),
+            ],
+          ),
+        ),
+        if (code != null)
+          Padding(
+            padding: const EdgeInsets.only(left: 22),
             child: Text(
-              canJoin ? 'Rejoindre Google Meet' : seance.place,
-              style: TextStyle(
-                color: canJoin ? AppColors.primary : const Color(0xFF6F6A7D),
-                fontSize: 13.5,
+              'Code $code',
+              style: const TextStyle(
+                color: AppColors.muted,
+                fontSize: 12.5,
                 fontWeight: FontWeight.w600,
               ),
             ),
           ),
-        ],
-      ),
+      ],
     );
   }
 }
@@ -267,6 +333,53 @@ class _ModeBadge extends StatelessWidget {
   }
 }
 
+class _CalendarButton extends StatelessWidget {
+  const _CalendarButton({
+    required this.inCalendar,
+    required this.busy,
+    required this.onPressed,
+  });
+
+  final bool inCalendar;
+  final bool busy;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = busy
+        ? 'Synchronisation...'
+        : (inCalendar ? 'Dans Google Agenda · Retirer' : 'Ajouter à Google Agenda');
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: TextButton.icon(
+        onPressed: onPressed,
+        style: TextButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          minimumSize: const Size(0, 36),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          foregroundColor: inCalendar ? AppColors.green : AppColors.primary,
+        ),
+        icon: busy
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : Icon(
+                inCalendar
+                    ? Icons.event_available_rounded
+                    : Icons.edit_calendar_outlined,
+                size: 18,
+              ),
+        label: Text(
+          label,
+          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5),
+        ),
+      ),
+    );
+  }
+}
+
 class _ReserveButton extends StatelessWidget {
   const _ReserveButton({
     required this.reserved,
@@ -296,7 +409,9 @@ class _ReserveButton extends StatelessWidget {
             borderRadius: BorderRadius.circular(16),
             border: reserved
                 ? null
-                : Border.all(color: full ? AppColors.line : AppColors.primarySoft),
+                : Border.all(
+                    color: full ? AppColors.line : AppColors.primarySoft,
+                  ),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,

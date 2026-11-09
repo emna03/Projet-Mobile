@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:studymate/features/calendar/google_calendar_api.dart';
 import 'package:studymate/features/seances/models/seance.dart';
 import 'package:studymate/features/seances/seance_user.dart';
 import 'package:studymate/features/seances/seances_database.dart';
@@ -8,8 +9,15 @@ class SeancesStore extends ChangeNotifier {
   SeancesStore({
     SeancesDatabase? database,
     Future<SeanceUser> Function()? loadUser,
+    GoogleCalendarApi? calendar,
   })  : _database = database ?? SeancesDatabase(),
-        _loadUser = loadUser ?? loadCurrentSeanceUser;
+        _loadUser = loadUser ?? loadCurrentSeanceUser,
+        _calendar = calendar;
+
+  final GoogleCalendarApi? _calendar;
+  GoogleCalendarApi get _api => _calendar ?? googleCalendarApi;
+  final Set<String> _calendarBusy = {};
+  String? _calendarWarning;
 
   final Future<SeanceUser> Function() _loadUser;
   SeanceUser _user = SeanceUser.anonymous;
@@ -79,9 +87,104 @@ class SeancesStore extends ChangeNotifier {
     } else {
       return;
     }
-    _items[index] = next;
+    final dropEvent =
+        current.reserved && current.inCalendar && !isOwner(current);
+    final saved = dropEvent ? next.copyWith(clearCalendarEvent: true) : next;
+    _items[index] = saved;
     notifyListeners();
-    await _database.update(next);
+    await _database.update(saved);
+    if (dropEvent) await _dropCalendarEvent(current);
+  }
+
+  /// Message à afficher si la synchronisation Google Agenda a échoué en
+  /// arrière-plan (modification ou suppression). Il n'est lu qu'une fois.
+  String? takeCalendarWarning() {
+    final warning = _calendarWarning;
+    _calendarWarning = null;
+    return warning;
+  }
+
+  bool isCalendarBusy(String id) => _calendarBusy.contains(id);
+
+  /// Peut-on mettre cette séance dans l'agenda ? Oui si elle t'appartient ou
+  /// si tu l'as réservée.
+  bool canSyncCalendar(Seance seance) => isOwner(seance) || seance.reserved;
+
+  /// Ajoute la séance à Google Agenda, ou l'en retire si elle y est déjà.
+  Future<({bool ok, String message})> toggleCalendar(String id) async {
+    final index = _items.indexWhere((seance) => seance.id == id);
+    if (index == -1) return (ok: false, message: 'Séance introuvable.');
+    final current = _items[index];
+    if (!canSyncCalendar(current)) {
+      return (
+        ok: false,
+        message: 'Réserve cette séance pour l\'ajouter à ton agenda.',
+      );
+    }
+    if (!_calendarBusy.add(id)) {
+      return (ok: false, message: 'Synchronisation déjà en cours.');
+    }
+    notifyListeners();
+    try {
+      final Seance next;
+      final String message;
+      if (current.inCalendar) {
+        await _api.deleteEvent(current.calendarEventId!);
+        next = current.copyWith(clearCalendarEvent: true);
+        message = 'Séance retirée de Google Agenda.';
+      } else {
+        final eventId = await _api.upsertSeance(current);
+        next = current.copyWith(calendarEventId: eventId);
+        message = 'Séance ajoutée à Google Agenda.';
+      }
+      await _replaceCalendarState(next);
+      return (ok: true, message: message);
+    } on CalendarApiException catch (error) {
+      return (ok: false, message: error.message);
+    } finally {
+      _calendarBusy.remove(id);
+      notifyListeners();
+    }
+  }
+
+  /// Garde le nouvel identifiant d'événement sans écraser le reste de la
+  /// séance, qui a pu changer pendant l'appel réseau.
+  Future<void> _replaceCalendarState(Seance next) async {
+    final index = _items.indexWhere((seance) => seance.id == next.id);
+    if (index == -1) return;
+    final latest = _items[index].copyWith(
+      calendarEventId: next.calendarEventId,
+      clearCalendarEvent: !next.inCalendar,
+    );
+    _items[index] = latest;
+    notifyListeners();
+    await _database.update(latest);
+  }
+
+  Future<void> _dropCalendarEvent(Seance seance) async {
+    if (!seance.inCalendar) return;
+    try {
+      await _api.deleteEvent(seance.calendarEventId!);
+    } on CalendarApiException catch (error) {
+      _calendarWarning =
+          'Google Agenda n\'a pas pu retirer l\'événement : ${error.message}';
+    }
+  }
+
+  Future<void> _refreshCalendarEvent(Seance seance) async {
+    if (!seance.inCalendar) return;
+    try {
+      final eventId = await _api.upsertSeance(
+        seance,
+        eventId: seance.calendarEventId,
+      );
+      if (eventId != seance.calendarEventId) {
+        await _replaceCalendarState(seance.copyWith(calendarEventId: eventId));
+      }
+    } on CalendarApiException catch (error) {
+      _calendarWarning =
+          'Séance enregistrée, mais Google Agenda n\'a pas été mis à jour : ${error.message}';
+    }
   }
 
   SeanceUser get user => _user;
@@ -118,6 +221,7 @@ class SeancesStore extends ChangeNotifier {
       _items[index] = owned;
       _error = null;
       notifyListeners();
+      await _refreshCalendarEvent(owned);
       return true;
     } catch (error) {
       _error = '$error';
@@ -132,10 +236,12 @@ class SeancesStore extends ChangeNotifier {
     if (!isOwner(_items[index])) return false;
     _request++;
     try {
+      final removed = _items[index];
       await _database.delete(id);
       _items.removeAt(index);
       _error = null;
       notifyListeners();
+      await _dropCalendarEvent(removed);
       return true;
     } catch (error) {
       _error = '$error';

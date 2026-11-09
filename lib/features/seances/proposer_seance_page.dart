@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:studymate/features/meet/google_meet_api.dart';
+import 'package:studymate/features/meet/meet_space.dart';
 import 'package:studymate/features/seances/models/seance.dart';
 import 'package:studymate/features/seances/seance_user.dart';
 import 'package:studymate/theme/app_colors.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 class ProposerSeancePage extends StatefulWidget {
   const ProposerSeancePage({
@@ -32,6 +33,10 @@ class _ProposerSeancePageState extends State<ProposerSeancePage> {
   late DateTime _date;
   late TimeOfDay _start;
   late TimeOfDay _end;
+  String? _meetSpaceName;
+  String? _meetCode;
+  MeetAccess _meetAccess = MeetAccess.open;
+  bool _meetBusy = false;
 
   bool get _editing => widget.seance != null;
 
@@ -45,7 +50,8 @@ class _ProposerSeancePageState extends State<ProposerSeancePage> {
       text: seance?.host ?? widget.currentUser.displayName,
     );
     _place = TextEditingController(
-      text: seance?.place ??
+      text:
+          seance?.place ??
           (seance?.format == SessionFormat.inPerson ? 'Salle B12' : ''),
     );
     _seats = TextEditingController(text: '${seance?.seatsLeft ?? 6}');
@@ -54,6 +60,11 @@ class _ProposerSeancePageState extends State<ProposerSeancePage> {
     _date = seance?.date ?? DateTime(2026, 10, 12);
     _start = seance?.start ?? const TimeOfDay(hour: 18, minute: 0);
     _end = seance?.end ?? const TimeOfDay(hour: 19, minute: 30);
+    _meetSpaceName = seance?.meetSpaceName;
+    _meetCode =
+        seance?.meetCode ??
+        (seance == null ? null : meetingCodeFromLink(seance.place));
+    _meetAccess = MeetAccessDetails.parse(seance?.meetAccess);
   }
 
   @override
@@ -96,7 +107,9 @@ class _ProposerSeancePageState extends State<ProposerSeancePage> {
                           const SizedBox(width: 12),
                           Expanded(
                             child: Text(
-                              _editing ? 'Modifier la séance' : 'Proposer une séance',
+                              _editing
+                                  ? 'Modifier la séance'
+                                  : 'Proposer une séance',
                               style: const TextStyle(
                                 color: AppColors.text,
                                 fontSize: 22,
@@ -148,8 +161,10 @@ class _ProposerSeancePageState extends State<ProposerSeancePage> {
                               selected: _format == SessionFormat.online,
                               onTap: () => setState(() {
                                 _format = SessionFormat.online;
-                                if (!_isMeetLink(_place.text)) {
-                                  _place.clear();
+                                if (!isGoogleMeetLink(_place.text)) {
+                                  _place.text = _meetCode == null
+                                      ? ''
+                                      : 'https://meet.google.com/$_meetCode';
                                 }
                               }),
                             ),
@@ -163,7 +178,7 @@ class _ProposerSeancePageState extends State<ProposerSeancePage> {
                               onTap: () => setState(() {
                                 _format = SessionFormat.inPerson;
                                 if (_place.text.trim().isEmpty ||
-                                    _isMeetLink(_place.text)) {
+                                    isGoogleMeetLink(_place.text)) {
                                   _place.text = 'Salle B12';
                                 }
                               }),
@@ -178,32 +193,63 @@ class _ProposerSeancePageState extends State<ProposerSeancePage> {
                           controller: _place,
                           hint: 'https://meet.google.com/abc-defg-hij',
                           keyboardType: TextInputType.url,
+                          onChanged: _onMeetLinkEdited,
                           validator: (value) {
-                            if (!_isMeetLink(value ?? '')) {
-                              return 'Colle un lien Google Meet';
+                            if (!isGoogleMeetLink(value ?? '')) {
+                              return 'Crée un lien Google Meet ou colle-le ici';
                             }
                             return null;
                           },
                         ),
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: TextButton.icon(
-                            onPressed: _createMeetLink,
-                            icon: const Icon(Icons.video_call_outlined),
-                            label: const Text('Créer le lien sur Google Meet'),
-                          ),
-                        ),
-                        const Padding(
-                          padding: EdgeInsets.only(bottom: 14),
-                          child: Text(
-                            'Google ouvre une nouvelle réunion. Copie le lien et colle-le ici.',
-                            style: TextStyle(
-                              color: AppColors.muted,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: _meetBusy ? null : _createMeetLink,
+                            icon: _meetBusy
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.video_call_outlined),
+                            label: Text(
+                              _meetSpaceName == null
+                                  ? 'Créer le lien Google Meet'
+                                  : 'Nouveau lien Google Meet',
                             ),
                           ),
                         ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'La salle est créée avec ton compte Google via l\'API Meet.',
+                          style: TextStyle(
+                            color: AppColors.muted,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        if (_meetCode != null) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            'Code $_meetCode',
+                            style: const TextStyle(
+                              color: AppColors.text,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
+                        if (_meetSpaceName != null)
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: TextButton(
+                              onPressed: _meetBusy ? null : _endConference,
+                              child: const Text('Terminer la réunion en cours'),
+                            ),
+                          )
+                        else
+                          const SizedBox(height: 14),
                       ] else
                         _Field(
                           label: 'Salle',
@@ -238,7 +284,9 @@ class _ProposerSeancePageState extends State<ProposerSeancePage> {
                         controller: _seats,
                         hint: '6',
                         keyboardType: TextInputType.number,
-                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                        ],
                         validator: (value) {
                           final seats = int.tryParse(value ?? '');
                           if (seats == null || seats <= 0) {
@@ -293,28 +341,87 @@ class _ProposerSeancePageState extends State<ProposerSeancePage> {
     );
   }
 
-  bool _isMeetLink(String value) {
-    final uri = Uri.tryParse(value.trim());
-    if (uri == null || uri.scheme != 'https' || uri.host != 'meet.google.com') {
-      return false;
-    }
-    final code = uri.path.replaceAll('/', '');
-    return code.isNotEmpty && code != 'new';
+  void _onMeetLinkEdited(String value) {
+    final code = meetingCodeFromLink(value);
+    if (code == _meetCode) return;
+    setState(() {
+      _meetCode = code;
+      _meetSpaceName = null;
+    });
   }
 
   Future<void> _createMeetLink() async {
-    final uri = Uri.parse('https://meet.google.com/new');
-    try {
-      final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
-      if (!opened && mounted) {
-        await launchUrl(uri, mode: LaunchMode.inAppBrowserView);
-      }
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Impossible d\'ouvrir Google Meet. $error')),
+    if (_meetBusy) return;
+    if (_meetSpaceName != null) {
+      final confirmed = await _confirm(
+        'Nouveau lien Google Meet',
+        'La séance utilisera une nouvelle salle. L\'ancien lien ne sera plus proposé.',
       );
+      if (confirmed != true || !mounted) return;
     }
+    setState(() => _meetBusy = true);
+    try {
+      final space = await googleMeetApi.createSpace(access: _meetAccess);
+      if (!mounted) return;
+      setState(() {
+        _place.text = space.meetingUri;
+        _meetSpaceName = space.name;
+        _meetCode = space.meetingCode;
+        _meetAccess = space.access;
+      });
+      _showMessage('Lien Google Meet créé.');
+    } on MeetApiException catch (error) {
+      _showMessage(error.message);
+    } finally {
+      if (mounted) setState(() => _meetBusy = false);
+    }
+  }
+
+  Future<void> _endConference() async {
+    final spaceName = _meetSpaceName;
+    if (spaceName == null || _meetBusy) return;
+    final confirmed = await _confirm(
+      'Terminer la réunion',
+      'Tout le monde sera déconnecté de cette salle. Le lien reste valable.',
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _meetBusy = true);
+    try {
+      await googleMeetApi.endActiveConference(spaceName);
+      _showMessage('Réunion terminée. Le lien reste valable.');
+    } on MeetApiException catch (error) {
+      _showMessage(error.message);
+    } finally {
+      if (mounted) setState(() => _meetBusy = false);
+    }
+  }
+
+  Future<bool?> _confirm(String title, String message) {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text(title),
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Annuler'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Continuer'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _pickDate() async {
@@ -342,6 +449,9 @@ class _ProposerSeancePageState extends State<ProposerSeancePage> {
     if (!_formKey.currentState!.validate()) return;
     final seats = int.parse(_seats.text);
     final existing = widget.seance;
+    final online = _format == SessionFormat.online;
+    final code = online ? meetingCodeFromLink(_place.text) : null;
+    final linked = code != null && code == _meetCode && _meetSpaceName != null;
     final seance = Seance(
       id: existing?.id ?? DateTime.now().microsecondsSinceEpoch.toString(),
       ownerId: existing?.ownerId ?? widget.currentUser.id,
@@ -357,6 +467,10 @@ class _ProposerSeancePageState extends State<ProposerSeancePage> {
       reserved: existing?.reserved ?? false,
       free: _free,
       priceLabel: _free ? null : 'Payant',
+      meetSpaceName: linked ? _meetSpaceName : null,
+      meetCode: code,
+      meetAccess: linked ? _meetAccess.apiValue : null,
+      calendarEventId: existing?.calendarEventId,
     );
     Navigator.of(context).pop(seance);
   }
@@ -370,6 +484,7 @@ class _Field extends StatelessWidget {
     this.keyboardType,
     this.inputFormatters,
     this.validator,
+    this.onChanged,
   });
 
   final String label;
@@ -378,6 +493,7 @@ class _Field extends StatelessWidget {
   final TextInputType? keyboardType;
   final List<TextInputFormatter>? inputFormatters;
   final String? Function(String?)? validator;
+  final ValueChanged<String>? onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -398,7 +514,9 @@ class _Field extends StatelessWidget {
             controller: controller,
             keyboardType: keyboardType,
             inputFormatters: inputFormatters,
-            validator: validator ??
+            onChanged: onChanged,
+            validator:
+                validator ??
                 (value) {
                   if (value == null || value.trim().isEmpty) {
                     return 'Champ obligatoire';
@@ -424,7 +542,10 @@ class _Field extends StatelessWidget {
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(16),
-                borderSide: const BorderSide(color: AppColors.primary, width: 1.4),
+                borderSide: const BorderSide(
+                  color: AppColors.primary,
+                  width: 1.4,
+                ),
               ),
             ),
           ),

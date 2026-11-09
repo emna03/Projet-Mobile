@@ -18,6 +18,10 @@ class Seance {
     this.reserved = false,
     this.free = true,
     this.priceLabel,
+    this.meetSpaceName,
+    this.meetCode,
+    this.meetAccess,
+    this.calendarEventId,
   });
 
   final String id;
@@ -34,8 +38,16 @@ class Seance {
   final bool reserved;
   final bool free;
   final String? priceLabel;
+  final String? meetSpaceName;
+  final String? meetCode;
+  final String? meetAccess;
+
+  /// Identifiant de l'événement dans Google Agenda, si la séance y est.
+  final String? calendarEventId;
 
   bool get isOnline => format == SessionFormat.online;
+
+  bool get inCalendar => calendarEventId != null && calendarEventId!.isNotEmpty;
 
   String get priceText => free ? 'Gratuit' : (priceLabel ?? '');
 
@@ -53,6 +65,11 @@ class Seance {
     bool? reserved,
     bool? free,
     String? priceLabel,
+    String? meetSpaceName,
+    String? meetCode,
+    String? meetAccess,
+    String? calendarEventId,
+    bool clearCalendarEvent = false,
   }) {
     return Seance(
       id: id,
@@ -69,6 +86,12 @@ class Seance {
       reserved: reserved ?? this.reserved,
       free: free ?? this.free,
       priceLabel: priceLabel ?? this.priceLabel,
+      meetSpaceName: meetSpaceName ?? this.meetSpaceName,
+      meetCode: meetCode ?? this.meetCode,
+      meetAccess: meetAccess ?? this.meetAccess,
+      calendarEventId: clearCalendarEvent
+          ? null
+          : (calendarEventId ?? this.calendarEventId),
     );
   }
 
@@ -88,6 +111,10 @@ class Seance {
       'reserved': reserved ? 1 : 0,
       'free': free ? 1 : 0,
       'price_label': priceLabel,
+      'meet_space_name': meetSpaceName,
+      'meet_code': meetCode,
+      'meet_access': meetAccess,
+      'calendar_event_id': calendarEventId,
     };
   }
 
@@ -107,6 +134,10 @@ class Seance {
       reserved: (map['reserved']! as int) == 1,
       free: (map['free']! as int) == 1,
       priceLabel: map['price_label'] as String?,
+      meetSpaceName: map['meet_space_name'] as String?,
+      meetCode: map['meet_code'] as String?,
+      meetAccess: map['meet_access'] as String?,
+      calendarEventId: map['calendar_event_id'] as String?,
     );
   }
 }
