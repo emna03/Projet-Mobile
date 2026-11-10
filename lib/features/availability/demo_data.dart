@@ -128,6 +128,10 @@ class DemoData {
 /// - SQL (2 h) : le mercredi 18:00 et le samedi à partir de 10:00 (avec marge).
 /// - Réseaux (1 h) : le mercredi 18:00 (marge 30 min) et le samedi 11:00.
 /// - Flutter (2 h) : aucun créneau commun, seulement des compromis.
+///
+/// Une cinquième séance, « Point projet intégré », chevauche exprès
+/// Algorithmique (même jour, 20:30 – 21:30) pour montrer un conflit
+/// d'horaire. Elle n'a pas de participants.
 DemoData buildDemoData({
   required DateTime now,
   required String ownerId,
@@ -201,8 +205,19 @@ DemoData buildDemoData({
     place: 'Google Meet (lien à créer)',
   );
 
+  final conflit = seance(
+    suffix: 'conflit',
+    subject: 'Projet intégré',
+    title: 'Point projet intégré',
+    days: 2,
+    start: const TimeOfDay(hour: 20, minute: 30),
+    end: const TimeOfDay(hour: 21, minute: 30),
+    format: SessionFormat.inPerson,
+    place: 'Salle A3',
+  );
+
   return DemoData(
-    seances: [algo, sql, reseaux, flutter],
+    seances: [algo, sql, reseaux, flutter, conflit],
     participants: {
       algo.id: [demoSarah, demoYassine, demoInes],
       sql.id: [demoSarah, demoAmine],

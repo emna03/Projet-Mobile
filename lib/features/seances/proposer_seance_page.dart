@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:studymate/features/conflicts/schedule_conflicts.dart';
 import 'package:studymate/features/meet/google_meet_api.dart';
 import 'package:studymate/features/meet/meet_space.dart';
 import 'package:studymate/features/seances/models/seance.dart';
@@ -12,10 +13,15 @@ class ProposerSeancePage extends StatefulWidget {
     super.key,
     required this.currentUser,
     this.seance,
+    this.conflictsFor,
   });
 
   final SeanceUser currentUser;
   final Seance? seance;
+
+  /// Renvoie mes séances qui chevaucheraient la séance donnée. Sert à
+  /// prévenir d'un conflit d'horaire avant de publier.
+  final List<Seance> Function(Seance candidate)? conflictsFor;
 
   @override
   State<ProposerSeancePage> createState() => _ProposerSeancePageState();
@@ -279,6 +285,10 @@ class _ProposerSeancePageState extends State<ProposerSeancePage> {
                           ),
                         ],
                       ),
+                      if (_scheduleConflicts.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        _ConflictWarning(conflicts: _scheduleConflicts),
+                      ],
                       if (_format == SessionFormat.inPerson) ...[
                         const SizedBox(height: 12),
                         WeatherCard(date: _date, start: _start, end: _end),
@@ -450,8 +460,40 @@ class _ProposerSeancePageState extends State<ProposerSeancePage> {
     });
   }
 
-  void _submit() {
+  /// Mes séances qui chevauchent la date et l'horaire choisis.
+  List<Seance> get _scheduleConflicts {
+    final check = widget.conflictsFor;
+    if (check == null) return const [];
+    final existing = widget.seance;
+    return check(
+      Seance(
+        id: existing?.id ?? '',
+        ownerId: existing?.ownerId ?? widget.currentUser.id,
+        subject: '',
+        title: '',
+        host: '',
+        date: _date,
+        start: _start,
+        end: _end,
+        format: _format,
+        place: '',
+        seatsLeft: 0,
+      ),
+    );
+  }
+
+  Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    final conflicts = _scheduleConflicts;
+    if (conflicts.isNotEmpty) {
+      final confirmed = await _confirm(
+        'Conflit d\'horaire',
+        'Cette séance chevauche '
+            '${conflicts.map(describeSeanceSlot).join(' et ')}.\n\n'
+            '${_editing ? 'Enregistrer' : 'Publier'} quand même ?',
+      );
+      if (confirmed != true || !mounted) return;
+    }
     final seats = int.parse(_seats.text);
     final existing = widget.seance;
     final online = _format == SessionFormat.online;
@@ -694,6 +736,47 @@ class _CircleButton extends StatelessWidget {
           height: 42,
           child: Icon(icon, color: AppColors.text),
         ),
+      ),
+    );
+  }
+}
+
+class _ConflictWarning extends StatelessWidget {
+  const _ConflictWarning({required this.conflicts});
+
+  final List<Seance> conflicts;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFE9E6),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(
+            Icons.warning_amber_rounded,
+            size: 18,
+            color: Color(0xFFC62828),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Conflit d\'horaire : tu as déjà '
+              '${conflicts.map(describeSeanceSlot).join(' et ')} '
+              'à ce moment-là.',
+              style: const TextStyle(
+                color: AppColors.text,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

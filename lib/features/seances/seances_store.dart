@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:studymate/features/availability/availability_models.dart';
 import 'package:studymate/features/availability/demo_data.dart';
 import 'package:studymate/features/calendar/google_calendar_api.dart';
+import 'package:studymate/features/conflicts/schedule_conflicts.dart';
 import 'package:studymate/features/notifications/seance_reminders.dart';
 import 'package:studymate/features/seances/models/seance.dart';
 import 'package:studymate/features/seances/seance_user.dart';
@@ -14,10 +15,106 @@ class SeancesStore extends ChangeNotifier {
     Future<SeanceUser> Function()? loadUser,
     GoogleCalendarApi? calendar,
     SeanceReminderScheduler? reminders,
+    DateTime Function()? clock,
   })  : _database = database ?? SeancesDatabase(),
         _loadUser = loadUser ?? loadCurrentSeanceUser,
         _calendar = calendar,
-        _reminders = reminders;
+        _reminders = reminders,
+        _clock = clock ?? DateTime.now;
+
+  /// Horloge remplaçable dans les tests.
+  final DateTime Function() _clock;
+  bool _disposed = false;
+
+  Map<String, List<Seance>> _conflicts = const {};
+  Map<String, List<String>> _unavailable = const {};
+  int _conflictRequest = 0;
+
+  /// Séances qui concernent l'utilisateur : proposées ou réservées.
+  List<Seance> get mySeances =>
+      List.unmodifiable(_items.where(canSyncCalendar));
+
+  /// Séances à venir de l'utilisateur dont l'horaire chevauche celui de la
+  /// séance [id]. Vide s'il n'y a pas de conflit.
+  List<Seance> conflictsOf(String id) => _conflicts[id] ?? const [];
+
+  /// Nombre de séances de l'utilisateur prises dans un conflit d'horaire.
+  int get conflictCount => _conflicts.length;
+
+  /// Participants qui ne sont pas libres à l'heure de la séance [id]
+  /// (« toi » pour l'utilisateur). Renseigné pour les séances qu'il propose.
+  List<String> unavailableFor(String id) => _unavailable[id] ?? const [];
+
+  /// Conflits qu'aurait [candidate] avec les séances à venir de
+  /// l'utilisateur, par exemple avant de la réserver ou de la publier.
+  List<Seance> conflictsFor(Seance candidate) {
+    final now = _clock();
+    if (!seanceInterval(candidate).end.isAfter(now)) return const [];
+    return conflictingSeances(
+      candidate,
+      _items.where(
+        (seance) =>
+            canSyncCalendar(seance) &&
+            seanceInterval(seance).end.isAfter(now),
+      ),
+    );
+  }
+
+  Future<void> _conflictTask = Future<void>.value();
+
+  /// Lance le recalcul sans faire attendre l'interface : les conflits entre
+  /// séances sont à jour tout de suite, les indisponibilités (lues en base)
+  /// arrivent juste après.
+  void _scheduleConflictRefresh() {
+    _conflictTask = _refreshConflicts();
+  }
+
+  /// Se termine quand le dernier recalcul des conflits est fini.
+  Future<void> conflictsSettled() async {
+    Future<void> task;
+    do {
+      task = _conflictTask;
+      await task;
+    } while (!identical(task, _conflictTask));
+  }
+
+  /// Recalcule les conflits d'horaires et les indisponibilités. Appelé
+  /// après chaque changement des séances ou des disponibilités.
+  Future<void> _refreshConflicts() async {
+    final request = ++_conflictRequest;
+    final now = _clock();
+    _conflicts = detectSeanceConflicts(
+      _items.where(canSyncCalendar),
+      now: now,
+    );
+    final unavailable = <String, List<String>>{};
+    try {
+      for (final seance in List.of(_items)) {
+        if (!isOwner(seance)) continue;
+        if (!seanceInterval(seance).end.isAfter(now)) continue;
+        final participants = await participantsFor(seance.id);
+        // Sans autre participant, il n'y a personne avec qui s'accorder.
+        if (participants.length < 2) continue;
+        final missing = unavailableParticipants(seance, participants);
+        if (missing.isNotEmpty) {
+          unavailable[seance.id] = [
+            for (final person in missing) person.isMe ? 'toi' : person.name,
+          ];
+        }
+      }
+    } catch (error) {
+      debugPrint('Conflict detection error: $error');
+    }
+    if (request != _conflictRequest || _disposed) return;
+    _unavailable = unavailable;
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
 
   /// Rappels sur le téléphone. Null : aucune notification (tests).
   final SeanceReminderScheduler? _reminders;
@@ -46,6 +143,7 @@ class SeancesStore extends ChangeNotifier {
   /// Aligne les rappels sur les séances qui concernent l'utilisateur :
   /// celles qu'il propose et celles qu'il a réservées.
   Future<void> _syncReminders() async {
+    _scheduleConflictRefresh();
     await _reminders?.sync(_items.where(canSyncCalendar));
   }
 
@@ -246,17 +344,23 @@ class SeancesStore extends ChangeNotifier {
   Future<void> saveAvailability(
     String userId,
     List<AvailabilityWindow> windows,
-  ) => _database.replaceAvailability(userId, windows);
+  ) async {
+    await _database.replaceAvailability(userId, windows);
+    _scheduleConflictRefresh();
+  }
 
   Future<Participant> addParticipant(String seanceId, String name) async {
     final id = 'p-${DateTime.now().microsecondsSinceEpoch}';
     final clean = name.trim();
     await _database.addParticipant(seanceId, id, clean);
+    _scheduleConflictRefresh();
     return Participant(id: id, name: clean);
   }
 
-  Future<void> removeParticipant(String seanceId, String userId) =>
-      _database.removeParticipant(seanceId, userId);
+  Future<void> removeParticipant(String seanceId, String userId) async {
+    await _database.removeParticipant(seanceId, userId);
+    _scheduleConflictRefresh();
+  }
 
   /// Y a-t-il des séances d'exemple dans la liste ?
   bool get hasDemoData => _items.any((seance) => isDemoId(seance.id));
@@ -267,7 +371,7 @@ class SeancesStore extends ChangeNotifier {
     if (user.id.isEmpty) return false;
     await _database.insertDemo(
       buildDemoData(
-        now: now ?? DateTime.now(),
+        now: now ?? _clock(),
         ownerId: user.id,
         ownerName: user.displayName,
       ),

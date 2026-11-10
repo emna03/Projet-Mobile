@@ -56,7 +56,7 @@ void main() {
   /// alterne attente réelle et image tant que les lectures s'enchaînent
   /// (chaque participant demande ses disponibilités l'un après l'autre).
   Future<void> settle(WidgetTester tester) async {
-    for (var i = 0; i < 15; i++) {
+    for (var i = 0; i < 30; i++) {
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 40)),
       );
@@ -375,7 +375,7 @@ void main() {
       await tester.tap(find.text('Charger des séances d\'exemple (test)'));
       await settle(tester);
 
-      expect(store.items.length, before + 4);
+      expect(store.items.length, before + 5);
       expect(find.text('Supprimer les séances d\'exemple'), findsOneWidget);
       expect(find.text('Révisions Algorithmique'), findsOneWidget);
 

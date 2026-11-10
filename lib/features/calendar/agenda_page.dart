@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:studymate/features/calendar/agenda_entries.dart';
 import 'package:studymate/features/calendar/calendar_event.dart';
 import 'package:studymate/features/calendar/google_calendar_api.dart';
+import 'package:studymate/features/conflicts/schedule_conflicts.dart';
 import 'package:studymate/features/meet/meet_space.dart';
 import 'package:studymate/features/seances/models/seance.dart';
 import 'package:studymate/features/seances/seances_store.dart';
@@ -80,6 +81,30 @@ class _AgendaPageState extends State<AgendaPage> {
     }
   }
 
+  static String _overlapKey(AgendaEntry entry) => entry.isSeance
+      ? 'seance:${entry.seance!.id}'
+      : 'event:${entry.event!.id}';
+
+  /// Conflits d'horaires à signaler, par entrée de l'agenda : mes séances
+  /// qui se chevauchent entre elles, et mes séances qui chevauchent un
+  /// autre événement de Google Agenda (signalé des deux côtés).
+  Map<String, List<String>> _overlaps() {
+    final result = <String, List<String>>{};
+    for (final seance in widget.store.mySeances) {
+      final titles = <String>[
+        for (final other in widget.store.conflictsOf(seance.id)) other.title,
+      ];
+      for (final event in conflictingEvents(seance, _events)) {
+        // Une séance en conflit qui est aussi dans l'agenda n'est citée
+        // qu'une fois.
+        if (!titles.contains(event.title)) titles.add(event.title);
+        result.putIfAbsent('event:${event.id}', () => []).add(seance.title);
+      }
+      if (titles.isNotEmpty) result['seance:${seance.id}'] = titles;
+    }
+    return result;
+  }
+
   void _shiftMonth(int delta) {
     setState(() => _month = DateTime(_month.year, _month.month + delta));
     _load();
@@ -108,6 +133,7 @@ class _AgendaPageState extends State<AgendaPage> {
                 to: _to,
               );
               final groups = groupByDay(entries);
+              final overlaps = _overlaps();
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -128,7 +154,12 @@ class _AgendaPageState extends State<AgendaPage> {
                               for (final group in groups) ...[
                                 _DayTitle(day: group.day),
                                 for (final entry in group.entries) ...[
-                                  _EntryCard(entry: entry),
+                                  _EntryCard(
+                                    entry: entry,
+                                    overlaps:
+                                        overlaps[_overlapKey(entry)] ??
+                                        const [],
+                                  ),
                                   const SizedBox(height: 10),
                                 ],
                                 const SizedBox(height: 8),
@@ -302,9 +333,12 @@ String _clock(DateTime time) {
 }
 
 class _EntryCard extends StatelessWidget {
-  const _EntryCard({required this.entry});
+  const _EntryCard({required this.entry, this.overlaps = const []});
 
   final AgendaEntry entry;
+
+  /// Titres des séances ou événements qui chevauchent cette entrée.
+  final List<String> overlaps;
 
   @override
   Widget build(BuildContext context) {
@@ -370,9 +404,17 @@ class _EntryCard extends StatelessWidget {
                             color: AppColors.green,
                             background: Color(0xFFE3F5EA),
                           ),
+                        if (overlaps.isNotEmpty)
+                          const _Badge(
+                            label: 'Conflit',
+                            color: Color(0xFFC62828),
+                            background: Color(0xFFFFE9E6),
+                          ),
                       ],
                     ),
-                    if (isSeance || (event?.fromStudyMate ?? false))
+                    if (isSeance ||
+                        (event?.fromStudyMate ?? false) ||
+                        overlaps.isNotEmpty)
                       const SizedBox(height: 6),
                     Text(
                       entry.label,
@@ -383,6 +425,17 @@ class _EntryCard extends StatelessWidget {
                         fontWeight: FontWeight.w800,
                       ),
                     ),
+                    if (overlaps.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        'Chevauche : ${overlaps.join(', ')}',
+                        style: const TextStyle(
+                          color: Color(0xFFC62828),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
                     if (isSeance) ...[
                       const SizedBox(height: 2),
                       Text(

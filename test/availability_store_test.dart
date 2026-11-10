@@ -41,7 +41,7 @@ void main() {
   }
 
   group('demo data', () {
-    test('builds four upcoming seances owned by the user', () {
+    test('builds five upcoming seances owned by the user', () {
       final data = buildDemoData(
         now: _now,
         ownerId: 'user-ab',
@@ -53,6 +53,7 @@ void main() {
         'demo-sql',
         'demo-reseaux',
         'demo-flutter',
+        'demo-conflit',
       ]);
       expect(data.seances.every((s) => s.ownerId == 'user-ab'), isTrue);
       expect(data.seances.every((s) => s.host == 'Alex Benali'), isTrue);
@@ -61,6 +62,7 @@ void main() {
         DateTime(2026, 11, 13),
         DateTime(2026, 11, 14),
         DateTime(2026, 11, 15),
+        DateTime(2026, 11, 12),
       ]);
       expect(data.users.map((u) => u.name).toSet(), {
         'Sarah Ben Ali',
@@ -85,7 +87,7 @@ void main() {
       expect(await store.loadDemoData(now: _now), isTrue);
 
       expect(store.hasDemoData, isTrue);
-      expect(store.items.length, before + 4);
+      expect(store.items.length, before + 5);
 
       final participants = await store.participantsFor('demo-algo');
       expect(participants.map((p) => p.name), [

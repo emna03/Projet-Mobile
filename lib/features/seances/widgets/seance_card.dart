@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:studymate/features/conflicts/schedule_conflicts.dart';
 import 'package:studymate/features/meet/meet_space.dart';
 import 'package:studymate/features/seances/models/seance.dart';
 import 'package:studymate/theme/app_colors.dart';
@@ -17,6 +18,8 @@ class SeanceCard extends StatelessWidget {
     this.onToggleCalendar,
     this.calendarBusy = false,
     this.onFindSlots,
+    this.conflicts = const [],
+    this.unavailable = const [],
   });
 
   final Seance seance;
@@ -28,6 +31,12 @@ class SeanceCard extends StatelessWidget {
 
   /// Ouvre la recherche de créneaux communs (propriétaire seulement).
   final VoidCallback? onFindSlots;
+
+  /// Mes autres séances dont l'horaire chevauche celle-ci.
+  final List<Seance> conflicts;
+
+  /// Participants qui ne sont pas libres à l'heure de cette séance.
+  final List<String> unavailable;
 
   /// Null quand la séance ne peut pas encore aller dans l'agenda.
   final VoidCallback? onToggleCalendar;
@@ -167,6 +176,14 @@ class SeanceCard extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           _PlaceLine(seance: seance, icon: placeIcon),
+          if (conflicts.isNotEmpty || unavailable.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            _ConflictBanner(
+              conflicts: conflicts,
+              unavailable: unavailable,
+              onFindSlots: onFindSlots,
+            ),
+          ],
           if (onToggleCalendar != null) ...[
             const SizedBox(height: 6),
             _CalendarButton(
@@ -342,6 +359,84 @@ class _ModeBadge extends StatelessWidget {
           fontWeight: FontWeight.w600,
         ),
       ),
+    );
+  }
+}
+
+class _ConflictBanner extends StatelessWidget {
+  const _ConflictBanner({
+    required this.conflicts,
+    required this.unavailable,
+    required this.onFindSlots,
+  });
+
+  final List<Seance> conflicts;
+  final List<String> unavailable;
+  final VoidCallback? onFindSlots;
+
+  static const _red = Color(0xFFC62828);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFE9E6),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (conflicts.isNotEmpty)
+            _line(
+              Icons.warning_amber_rounded,
+              'Conflit d\'horaire : chevauche '
+              '${conflicts.map(describeSeanceSlot).join(' et ')}',
+            ),
+          if (conflicts.isNotEmpty && unavailable.isNotEmpty)
+            const SizedBox(height: 6),
+          if (unavailable.isNotEmpty)
+            _line(
+              Icons.person_off_outlined,
+              'Indisponible à cette heure : ${unavailable.join(', ')}',
+            ),
+          if (onFindSlots != null)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                onPressed: onFindSlots,
+                style: TextButton.styleFrom(
+                  foregroundColor: _red,
+                  padding: EdgeInsets.zero,
+                  minimumSize: const Size(0, 32),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: const Text('Trouver un autre créneau'),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _line(IconData icon, String text) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 18, color: _red),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            text,
+            style: const TextStyle(
+              color: AppColors.text,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

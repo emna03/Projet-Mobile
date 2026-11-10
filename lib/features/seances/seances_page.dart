@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:studymate/features/availability/common_slots_page.dart';
 import 'package:studymate/features/calendar/agenda_page.dart';
+import 'package:studymate/features/conflicts/schedule_conflicts.dart';
 import 'package:studymate/features/meet/meet_manage_sheet.dart';
 import 'package:studymate/features/meet/meet_space.dart';
 import 'package:studymate/features/notifications/notifications_sheet.dart';
@@ -66,6 +67,10 @@ class SeancesPage extends StatelessWidget {
             _AgendaButton(onPressed: () => _openAgenda(context)),
             const SizedBox(height: 16),
             _FormatFilters(selected: store.format, onSelected: store.setFormat),
+            if (store.conflictCount > 0) ...[
+              const SizedBox(height: 14),
+              _ConflictSummary(count: store.conflictCount),
+            ],
             const SizedBox(height: 18),
             if (store.error != null)
               Padding(
@@ -117,6 +122,8 @@ class SeancesPage extends StatelessWidget {
                   onFindSlots: store.isOwner(seance)
                       ? () => _openSlots(context, seance)
                       : null,
+                  conflicts: store.conflictsOf(seance.id),
+                  unavailable: store.unavailableFor(seance.id),
                 ),
                 const SizedBox(height: 14),
               ],
@@ -135,7 +142,10 @@ class SeancesPage extends StatelessWidget {
   Future<void> _openPropose(BuildContext context) async {
     final created = await Navigator.of(context).push<Seance>(
       MaterialPageRoute(
-        builder: (_) => ProposerSeancePage(currentUser: store.user),
+        builder: (_) => ProposerSeancePage(
+          currentUser: store.user,
+          conflictsFor: store.conflictsFor,
+        ),
       ),
     );
     if (created != null) {
@@ -160,7 +170,7 @@ class SeancesPage extends StatelessWidget {
     _showDenied(
       context,
       ok
-          ? '4 séances d\'exemple ajoutées. Ouvre le menu ⋯ d\'une séance, '
+          ? '5 séances d\'exemple ajoutées. Ouvre le menu ⋯ d\'une séance, '
                 'puis « Trouver un créneau commun ».'
           : 'Connecte-toi pour charger les exemples.',
     );
@@ -188,6 +198,7 @@ class SeancesPage extends StatelessWidget {
         builder: (_) => ProposerSeancePage(
           currentUser: store.user,
           seance: seance,
+          conflictsFor: store.conflictsFor,
         ),
       ),
     );
@@ -201,6 +212,34 @@ class SeancesPage extends StatelessWidget {
   }
 
   Future<void> _reserve(BuildContext context, Seance seance) async {
+    // Avant de réserver, prévenir si la séance tombe sur une autre des miennes.
+    if (!seance.reserved && !store.isOwner(seance)) {
+      final conflicts = store.conflictsFor(seance);
+      if (conflicts.isNotEmpty) {
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Conflit d\'horaire'),
+            content: Text(
+              '« ${seance.title} » chevauche '
+              '${conflicts.map(describeSeanceSlot).join(' et ')}.\n\n'
+              'Réserver quand même ?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Annuler'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Réserver quand même'),
+              ),
+            ],
+          ),
+        );
+        if (confirmed != true) return;
+      }
+    }
     await store.toggleReservation(seance.id);
     if (context.mounted) _showCalendarWarning(context);
   }
@@ -266,6 +305,40 @@ class SeancesPage extends StatelessWidget {
   void _showDenied(BuildContext context, String message) {
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(message)));
+  }
+}
+
+class _ConflictSummary extends StatelessWidget {
+  const _ConflictSummary({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFE9E6),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.warning_amber_rounded, color: Color(0xFFC62828)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              '$count de tes séances sont en conflit d\'horaire. '
+              'Elles sont signalées ci-dessous.',
+              style: const TextStyle(
+                color: AppColors.text,
+                fontSize: 13.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
