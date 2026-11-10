@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../core/constants/session_user.dart';
 import '../../../core/widgets/sm_widgets.dart';
 import '../../../core/utils/profile_photo.dart';
 import '../../../core/services/biometric_service.dart';
@@ -815,6 +816,7 @@ class _ProfileScreenState extends State<ProfileScreen>
 
                 try {
                   await _auth.signOut();
+                  SessionUser.role = '';
                   if (!mounted) return;
 
                   Navigator.of(this.context, rootNavigator: true)

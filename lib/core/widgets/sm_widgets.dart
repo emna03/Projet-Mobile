@@ -83,9 +83,13 @@ class PageTitle extends StatelessWidget {
 
 class SearchField extends StatelessWidget {
   final String hint;
-  const SearchField(this.hint, {super.key});
+  final ValueChanged<String>? onChanged;
+  final TextEditingController? controller;
+  const SearchField(this.hint, {super.key, this.onChanged, this.controller});
   @override
   Widget build(BuildContext context) => TextField(
+        controller: controller,
+        onChanged: onChanged,
         decoration: InputDecoration(hintText: hint, prefixIcon: const Icon(Icons.search, color: SM.muted)),
       );
 }

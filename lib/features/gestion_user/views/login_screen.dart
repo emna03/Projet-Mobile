@@ -8,6 +8,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../repositories/user_repository.dart';
 import '../../../main.dart';
+import '../../../core/constants/session_user.dart';
 import '../../../core/theme/app_theme.dart';
 import 'register_screen.dart';
 import 'forgot_password_screen.dart';
@@ -315,7 +316,11 @@ class _LoginScreenState extends State<LoginScreen>
   // NAVIGATION
   // ========================================
 
-  void _enter() {
+  Future<void> _enter() async {
+    await SessionUser.refreshRole();
+    // Profil public partagé avec les membres des groupes (non bloquant).
+    SessionUser.syncProfile();
+    if (!mounted) return;
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
         builder: (_) => const Shell(),

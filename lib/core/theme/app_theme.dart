@@ -89,3 +89,50 @@ ThemeData buildTheme() {
     ),
   );
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Alias utilisés par les modules Groupes et Chat (intégrés depuis
+// Projet-Mobile-version-1). Ils pointent vers la charte [SM] du projet
+// principal : une seule palette, un seul thème pour toute l'application.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class AppColors {
+  AppColors._();
+
+  static const Color primary = SM.primary;
+  static const Color primarySoft = SM.primarySoft;
+  static const Color background = SM.bg;
+  static const Color card = SM.card;
+  static const Color text = SM.text;
+  static const Color muted = SM.muted;
+  static const Color accent = SM.accent;
+  static const Color success = SM.success;
+  static const Color danger = SM.danger;
+  static const Color surfaceLight = Color(0xFFF8F9FA);
+
+  static const List<Color> avatarColors = [
+    Color(0xFF4F46E5),
+    Color(0xFF0EA5E9),
+    Color(0xFF10B981),
+    Color(0xFFF59E0B),
+    Color(0xFF8B5CF6),
+    Color(0xFFEC4899),
+  ];
+}
+
+class AppDimensions {
+  AppDimensions._();
+
+  static const double rCard = SM.rCard;
+  static const double rButton = SM.rButton;
+  static const double rBadge = SM.rBadge;
+  static const Duration anim = SM.anim;
+  static List<BoxShadow> get shadow => SM.shadow;
+}
+
+class AppTheme {
+  AppTheme._();
+
+  /// Thème unique de l'application (celui du projet principal).
+  static ThemeData get lightTheme => buildTheme();
+}

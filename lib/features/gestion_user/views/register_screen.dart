@@ -9,6 +9,7 @@ import '../viewmodels/register_viewmodel.dart';
 import 'register_header_widget.dart';
 import 'role_selection_widget.dart';
 import 'teacher_verification_widget.dart';
+import '../../../core/config/imgbb_config.dart';
 import '../../../core/services/imgbb_service.dart';
 
 class RegisterScreen extends StatefulWidget {
@@ -24,7 +25,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   late final RegisterViewModel _viewModel = RegisterViewModel(
     UserRepository(),
     imgBBService: ImgBBService(
-      apiKey: 'ffaedce924de3cc77dde73e869ed3cd4',
+      apiKey: ImgBBConfig.apiKey,
     ),
   );
 
