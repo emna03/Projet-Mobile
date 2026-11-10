@@ -106,6 +106,13 @@ class SeancesStore extends ChangeNotifier {
 
   bool isCalendarBusy(String id) => _calendarBusy.contains(id);
 
+  /// Client Google Agenda utilisé pour lire et écrire l'agenda.
+  GoogleCalendarApi get calendar => _api;
+
+  /// Séances réservées par l'utilisateur, quel que soit le filtre affiché.
+  List<Seance> get reservedSeances =>
+      List.unmodifiable(_items.where((seance) => seance.reserved));
+
   /// Peut-on mettre cette séance dans l'agenda ? Oui si elle t'appartient ou
   /// si tu l'as réservée.
   bool canSyncCalendar(Seance seance) => isOwner(seance) || seance.reserved;

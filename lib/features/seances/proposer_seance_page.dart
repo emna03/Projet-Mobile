@@ -4,6 +4,7 @@ import 'package:studymate/features/meet/google_meet_api.dart';
 import 'package:studymate/features/meet/meet_space.dart';
 import 'package:studymate/features/seances/models/seance.dart';
 import 'package:studymate/features/seances/seance_user.dart';
+import 'package:studymate/features/weather/weather_card.dart';
 import 'package:studymate/theme/app_colors.dart';
 
 class ProposerSeancePage extends StatefulWidget {
@@ -278,6 +279,10 @@ class _ProposerSeancePageState extends State<ProposerSeancePage> {
                           ),
                         ],
                       ),
+                      if (_format == SessionFormat.inPerson) ...[
+                        const SizedBox(height: 12),
+                        WeatherCard(date: _date, start: _start, end: _end),
+                      ],
                       const SizedBox(height: 16),
                       _Field(
                         label: 'Places',

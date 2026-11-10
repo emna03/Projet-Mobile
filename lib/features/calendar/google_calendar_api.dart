@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'package:studymate/features/calendar/calendar_event.dart';
 import 'package:studymate/features/meet/google_meet_auth.dart';
 import 'package:studymate/features/meet/meet_space.dart';
 import 'package:studymate/features/seances/models/seance.dart';
@@ -147,6 +148,45 @@ class GoogleCalendarApi {
       ),
       tolerated: const {404, 410},
     );
+  }
+
+  /// Événements du calendrier principal entre [from] (inclus) et [to]
+  /// (exclu), triés par début. Les événements récurrents sont dépliés.
+  Future<List<CalendarEvent>> listEvents({
+    required DateTime from,
+    required DateTime to,
+  }) async {
+    final events = <CalendarEvent>[];
+    String? pageToken;
+    do {
+      final uri = Uri.parse(_events).replace(
+        queryParameters: {
+          'timeMin': from.toUtc().toIso8601String(),
+          'timeMax': to.toUtc().toIso8601String(),
+          'singleEvents': 'true',
+          'orderBy': 'startTime',
+          'maxResults': '250',
+          if (pageToken != null) 'pageToken': pageToken,
+        },
+      );
+      final page = await _send(
+        (token) => _client.get(uri, headers: _headers(token)),
+      );
+      final items = page?['items'];
+      if (items is List) {
+        for (final item in items) {
+          if (item is Map) {
+            final event = CalendarEvent.fromJson(
+              Map<String, Object?>.from(item),
+            );
+            if (event != null) events.add(event);
+          }
+        }
+      }
+      final next = page?['nextPageToken'];
+      pageToken = next is String && next.isNotEmpty ? next : null;
+    } while (pageToken != null);
+    return events;
   }
 
   void close() {

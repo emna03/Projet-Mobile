@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:studymate/features/calendar/agenda_page.dart';
 import 'package:studymate/features/meet/meet_manage_sheet.dart';
 import 'package:studymate/features/meet/meet_space.dart';
 import 'package:studymate/features/seances/models/seance.dart';
@@ -54,6 +55,8 @@ class SeancesPage extends StatelessWidget {
             ),
             const SizedBox(height: 22),
             _ProposeButton(onPressed: () => _openPropose(context)),
+            const SizedBox(height: 10),
+            _AgendaButton(onPressed: () => _openAgenda(context)),
             const SizedBox(height: 16),
             _FormatFilters(selected: store.format, onSelected: store.setFormat),
             const SizedBox(height: 18),
@@ -125,6 +128,12 @@ class SeancesPage extends StatelessWidget {
         _showDenied(context, 'Impossible de publier cette séance.');
       }
     }
+  }
+
+  Future<void> _openAgenda(BuildContext context) {
+    return Navigator.of(context).push<void>(
+      MaterialPageRoute(builder: (_) => AgendaPage(store: store)),
+    );
   }
 
   Future<void> _openEdit(BuildContext context, Seance seance) async {
@@ -215,6 +224,38 @@ class SeancesPage extends StatelessWidget {
   void _showDenied(BuildContext context, String message) {
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(message)));
+  }
+}
+
+class _AgendaButton extends StatelessWidget {
+  const _AgendaButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 50,
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        onPressed: onPressed,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.primary,
+          backgroundColor: Colors.white,
+          side: const BorderSide(color: AppColors.primarySoft, width: 1.5),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+          textStyle: const TextStyle(
+            fontSize: 15.5,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -0.2,
+          ),
+        ),
+        icon: const Icon(Icons.calendar_month_rounded, size: 20),
+        label: const Text('Mon agenda Google'),
+      ),
+    );
   }
 }
 
