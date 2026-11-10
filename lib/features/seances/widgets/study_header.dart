@@ -2,9 +2,20 @@ import 'package:flutter/material.dart';
 import 'package:studymate/theme/app_colors.dart';
 
 class StudyHeader extends StatelessWidget {
-  const StudyHeader({super.key, required this.initials});
+  const StudyHeader({
+    super.key,
+    required this.initials,
+    this.onBellTap,
+    this.hasAlerts = false,
+  });
 
   final String initials;
+
+  /// Appelé quand on touche la cloche des notifications.
+  final VoidCallback? onBellTap;
+
+  /// Affiche le point orange : au moins une séance à venir est rappelée.
+  final bool hasAlerts;
 
   @override
   Widget build(BuildContext context) {
@@ -30,7 +41,7 @@ class StudyHeader extends StatelessWidget {
           ),
         ),
         const Spacer(),
-        const _BellButton(),
+        _BellButton(onTap: onBellTap, showDot: hasAlerts),
         const SizedBox(width: 10),
         _Avatar(initials: initials),
       ],
@@ -39,41 +50,62 @@ class StudyHeader extends StatelessWidget {
 }
 
 class _BellButton extends StatelessWidget {
-  const _BellButton();
+  const _BellButton({required this.onTap, required this.showDot});
+
+  final VoidCallback? onTap;
+  final bool showDot;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 44,
-      height: 44,
-      decoration: BoxDecoration(
+    return Semantics(
+      button: true,
+      label: 'Notifications',
+      child: Material(
         color: Colors.white,
-        shape: BoxShape.circle,
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF5C4BFF).withValues(alpha: 0.08),
-            blurRadius: 16,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
-      child: const Stack(
-        clipBehavior: Clip.none,
-        alignment: Alignment.center,
-        children: [
-          Icon(Icons.notifications_none_rounded, color: AppColors.text, size: 22),
-          Positioned(
-            top: 10,
-            right: 11,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: AppColors.dot,
-                shape: BoxShape.circle,
-              ),
-              child: SizedBox(width: 8, height: 8),
+        shape: const CircleBorder(),
+        elevation: 0,
+        shadowColor: const Color(0xFF5C4BFF).withValues(alpha: 0.08),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onTap,
+          child: Ink(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF5C4BFF).withValues(alpha: 0.08),
+                  blurRadius: 16,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: Stack(
+              clipBehavior: Clip.none,
+              alignment: Alignment.center,
+              children: [
+                const Icon(
+                  Icons.notifications_none_rounded,
+                  color: AppColors.text,
+                  size: 22,
+                ),
+                if (showDot)
+                  const Positioned(
+                    top: 10,
+                    right: 11,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: AppColors.dot,
+                        shape: BoxShape.circle,
+                      ),
+                      child: SizedBox(width: 8, height: 8),
+                    ),
+                  ),
+              ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }

@@ -11,6 +11,7 @@ import 'features/gestion_user/views/profile_screen.dart';
 import 'features/gestion_user/repositories/user_repository.dart';
 import 'features/home/views/home_screen.dart';
 import 'features/meet/google_meet_auth.dart';
+import 'features/notifications/seance_reminders.dart';
 import 'features/seances/seances_page.dart';
 import 'features/seances/seances_store.dart';
 
@@ -544,7 +545,7 @@ class Shell extends StatefulWidget {
 
 class _ShellState extends State<Shell> {
   late int index = widget.initial;
-  final _seances = SeancesStore();
+  final _seances = SeancesStore(reminders: seanceReminders);
 
   @override
   void initState() {

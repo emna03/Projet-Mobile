@@ -16,6 +16,7 @@ class SeanceCard extends StatelessWidget {
     this.onManageMeet,
     this.onToggleCalendar,
     this.calendarBusy = false,
+    this.onFindSlots,
   });
 
   final Seance seance;
@@ -24,6 +25,9 @@ class SeanceCard extends StatelessWidget {
   final VoidCallback? onEdit;
   final VoidCallback? onDelete;
   final VoidCallback? onManageMeet;
+
+  /// Ouvre la recherche de créneaux communs (propriétaire seulement).
+  final VoidCallback? onFindSlots;
 
   /// Null quand la séance ne peut pas encore aller dans l'agenda.
   final VoidCallback? onToggleCalendar;
@@ -66,7 +70,10 @@ class SeanceCard extends StatelessWidget {
               if (isOwner) ...[const _OwnerBadge(), const SizedBox(width: 8)],
               _ModeBadge(online: seance.isOnline),
               if (isOwner &&
-                  (onEdit != null || onDelete != null || onManageMeet != null))
+                  (onEdit != null ||
+                      onDelete != null ||
+                      onManageMeet != null ||
+                      onFindSlots != null))
                 PopupMenuButton<String>(
                   padding: EdgeInsets.zero,
                   icon: const Icon(
@@ -76,6 +83,7 @@ class SeanceCard extends StatelessWidget {
                   onSelected: (value) {
                     if (value == 'edit') onEdit?.call();
                     if (value == 'meet') onManageMeet?.call();
+                    if (value == 'slots') onFindSlots?.call();
                     if (value == 'delete') onDelete?.call();
                   },
                   itemBuilder: (context) => [
@@ -83,6 +91,11 @@ class SeanceCard extends StatelessWidget {
                       const PopupMenuItem(
                         value: 'edit',
                         child: Text('Modifier'),
+                      ),
+                    if (onFindSlots != null)
+                      const PopupMenuItem(
+                        value: 'slots',
+                        child: Text('Trouver un créneau commun'),
                       ),
                     if (onManageMeet != null)
                       const PopupMenuItem(

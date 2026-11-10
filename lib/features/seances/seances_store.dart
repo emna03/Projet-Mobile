@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:studymate/features/availability/availability_models.dart';
+import 'package:studymate/features/availability/demo_data.dart';
 import 'package:studymate/features/calendar/google_calendar_api.dart';
+import 'package:studymate/features/notifications/seance_reminders.dart';
 import 'package:studymate/features/seances/models/seance.dart';
 import 'package:studymate/features/seances/seance_user.dart';
 import 'package:studymate/features/seances/seances_database.dart';
@@ -10,9 +13,41 @@ class SeancesStore extends ChangeNotifier {
     SeancesDatabase? database,
     Future<SeanceUser> Function()? loadUser,
     GoogleCalendarApi? calendar,
+    SeanceReminderScheduler? reminders,
   })  : _database = database ?? SeancesDatabase(),
         _loadUser = loadUser ?? loadCurrentSeanceUser,
-        _calendar = calendar;
+        _calendar = calendar,
+        _reminders = reminders;
+
+  /// Rappels sur le téléphone. Null : aucune notification (tests).
+  final SeanceReminderScheduler? _reminders;
+
+  /// Prochaines séances de l'utilisateur (proposées ou réservées) avec l'état
+  /// de leur rappel.
+  List<SeanceAlert> alerts({DateTime? now}) {
+    return upcomingAlerts(
+      _items.where(canSyncCalendar),
+      now: now ?? DateTime.now(),
+    );
+  }
+
+  Future<bool> notificationsEnabled() async =>
+      await _reminders?.notificationsEnabled() ?? false;
+
+  Future<bool> enableNotifications() async {
+    final granted = await _reminders?.enableNotifications() ?? false;
+    if (granted) await _syncReminders();
+    return granted;
+  }
+
+  Future<bool> sendTestNotification() async =>
+      await _reminders?.sendTest() ?? false;
+
+  /// Aligne les rappels sur les séances qui concernent l'utilisateur :
+  /// celles qu'il propose et celles qu'il a réservées.
+  Future<void> _syncReminders() async {
+    await _reminders?.sync(_items.where(canSyncCalendar));
+  }
 
   final GoogleCalendarApi? _calendar;
   GoogleCalendarApi get _api => _calendar ?? googleCalendarApi;
@@ -61,6 +96,7 @@ class SeancesStore extends ChangeNotifier {
         notifyListeners();
       }
     }
+    if (request == _request && _error == null) await _syncReminders();
   }
 
   void setFormat(SessionFormat? format) {
@@ -93,6 +129,7 @@ class SeancesStore extends ChangeNotifier {
     _items[index] = saved;
     notifyListeners();
     await _database.update(saved);
+    await _syncReminders();
     if (dropEvent) await _dropCalendarEvent(current);
   }
 
@@ -194,6 +231,62 @@ class SeancesStore extends ChangeNotifier {
     }
   }
 
+  /// Participants d'une séance : l'utilisateur connecté en premier, puis les
+  /// personnes ajoutées, chacun avec ses disponibilités hebdomadaires.
+  Future<List<Participant>> participantsFor(String seanceId) async {
+    final me = Participant(
+      id: user.id,
+      name: user.displayName,
+      isMe: true,
+      windows: await _database.readAvailability(user.id),
+    );
+    return [me, ...await _database.readParticipants(seanceId)];
+  }
+
+  Future<void> saveAvailability(
+    String userId,
+    List<AvailabilityWindow> windows,
+  ) => _database.replaceAvailability(userId, windows);
+
+  Future<Participant> addParticipant(String seanceId, String name) async {
+    final id = 'p-${DateTime.now().microsecondsSinceEpoch}';
+    final clean = name.trim();
+    await _database.addParticipant(seanceId, id, clean);
+    return Participant(id: id, name: clean);
+  }
+
+  Future<void> removeParticipant(String seanceId, String userId) =>
+      _database.removeParticipant(seanceId, userId);
+
+  /// Y a-t-il des séances d'exemple dans la liste ?
+  bool get hasDemoData => _items.any((seance) => isDemoId(seance.id));
+
+  /// Ajoute les séances d'exemple (quatre séances à venir avec leurs
+  /// participants fictifs). Faux si personne n'est connecté.
+  Future<bool> loadDemoData({DateTime? now}) async {
+    if (user.id.isEmpty) return false;
+    await _database.insertDemo(
+      buildDemoData(
+        now: now ?? DateTime.now(),
+        ownerId: user.id,
+        ownerName: user.displayName,
+      ),
+      ownerId: user.id,
+    );
+    await load();
+    return true;
+  }
+
+  /// Supprime les séances d'exemple, et leurs événements Google Agenda.
+  Future<void> clearDemoData() async {
+    final demo = _items.where((seance) => isDemoId(seance.id)).toList();
+    for (final seance in demo) {
+      await _dropCalendarEvent(seance);
+    }
+    await _database.deleteDemo();
+    await load();
+  }
+
   SeanceUser get user => _user;
 
   bool isOwner(Seance seance) => user.owns(seance.ownerId);
@@ -208,6 +301,7 @@ class SeancesStore extends ChangeNotifier {
       _error = null;
       _loading = false;
       notifyListeners();
+      await _syncReminders();
       return true;
     } catch (error) {
       _error = '$error';
@@ -228,6 +322,7 @@ class SeancesStore extends ChangeNotifier {
       _items[index] = owned;
       _error = null;
       notifyListeners();
+      await _syncReminders();
       await _refreshCalendarEvent(owned);
       return true;
     } catch (error) {
@@ -248,6 +343,7 @@ class SeancesStore extends ChangeNotifier {
       _items.removeAt(index);
       _error = null;
       notifyListeners();
+      await _syncReminders();
       await _dropCalendarEvent(removed);
       return true;
     } catch (error) {

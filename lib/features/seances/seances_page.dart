@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:studymate/features/availability/common_slots_page.dart';
 import 'package:studymate/features/calendar/agenda_page.dart';
 import 'package:studymate/features/meet/meet_manage_sheet.dart';
 import 'package:studymate/features/meet/meet_space.dart';
+import 'package:studymate/features/notifications/notifications_sheet.dart';
 import 'package:studymate/features/seances/models/seance.dart';
 import 'package:studymate/features/seances/proposer_seance_page.dart';
 import 'package:studymate/features/seances/seances_store.dart';
@@ -23,7 +25,12 @@ class SeancesPage extends StatelessWidget {
         return ListView(
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
           children: [
-            StudyHeader(initials: store.user.initials),
+            StudyHeader(
+              initials: store.user.initials,
+              hasAlerts: store.alerts().isNotEmpty,
+              onBellTap: () =>
+                  showSeanceNotifications(context: context, store: store),
+            ),
             const SizedBox(height: 26),
             const Text(
               'Tes prochaines séances',
@@ -107,9 +114,18 @@ class SeancesPage extends StatelessWidget {
                       ? () => _toggleCalendar(context, seance)
                       : null,
                   calendarBusy: store.isCalendarBusy(seance.id),
+                  onFindSlots: store.isOwner(seance)
+                      ? () => _openSlots(context, seance)
+                      : null,
                 ),
                 const SizedBox(height: 14),
               ],
+            const SizedBox(height: 6),
+            _DemoDataBar(
+              hasDemo: store.hasDemoData,
+              onLoad: () => _loadDemo(context),
+              onClear: () => _clearDemo(context),
+            ),
           ],
         );
       },
@@ -128,6 +144,32 @@ class SeancesPage extends StatelessWidget {
         _showDenied(context, 'Impossible de publier cette séance.');
       }
     }
+  }
+
+  Future<void> _openSlots(BuildContext context, Seance seance) {
+    return Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => CommonSlotsPage(store: store, seance: seance),
+      ),
+    );
+  }
+
+  Future<void> _loadDemo(BuildContext context) async {
+    final ok = await store.loadDemoData();
+    if (!context.mounted) return;
+    _showDenied(
+      context,
+      ok
+          ? '4 séances d\'exemple ajoutées. Ouvre le menu ⋯ d\'une séance, '
+                'puis « Trouver un créneau commun ».'
+          : 'Connecte-toi pour charger les exemples.',
+    );
+  }
+
+  Future<void> _clearDemo(BuildContext context) async {
+    await store.clearDemoData();
+    if (!context.mounted) return;
+    _showDenied(context, 'Séances d\'exemple supprimées.');
   }
 
   Future<void> _openAgenda(BuildContext context) {
@@ -224,6 +266,36 @@ class SeancesPage extends StatelessWidget {
   void _showDenied(BuildContext context, String message) {
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(message)));
+  }
+}
+
+class _DemoDataBar extends StatelessWidget {
+  const _DemoDataBar({
+    required this.hasDemo,
+    required this.onLoad,
+    required this.onClear,
+  });
+
+  final bool hasDemo;
+  final VoidCallback onLoad;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      child: TextButton.icon(
+        onPressed: hasDemo ? onClear : onLoad,
+        icon: Icon(
+          hasDemo ? Icons.delete_outline_rounded : Icons.science_outlined,
+          size: 18,
+        ),
+        label: Text(
+          hasDemo
+              ? 'Supprimer les séances d\'exemple'
+              : 'Charger des séances d\'exemple (test)',
+        ),
+      ),
+    );
   }
 }
 
