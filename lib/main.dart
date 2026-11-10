@@ -2,7 +2,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 
 import 'firebase_options.dart';
 import 'core/theme/app_theme.dart';
@@ -11,6 +10,10 @@ import 'features/gestion_user/views/login_screen.dart';
 import 'features/gestion_user/views/profile_screen.dart';
 import 'features/gestion_user/repositories/user_repository.dart';
 import 'features/home/views/home_screen.dart';
+import 'features/meet/google_meet_auth.dart';
+import 'features/notifications/seance_reminders.dart';
+import 'features/seances/seances_page.dart';
+import 'features/seances/seances_store.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -19,7 +22,7 @@ Future<void> main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  await GoogleSignIn.instance.initialize();
+  await GoogleMeetAuth.instance.ensureInitialized();
 
   runApp(const StudyMateApp());
 }
@@ -542,16 +545,21 @@ class Shell extends StatefulWidget {
 
 class _ShellState extends State<Shell> {
   late int index = widget.initial;
+  final _seances = SeancesStore(reminders: seanceReminders);
 
-  final List<Widget> pages = const [
-    HomeScreen(),
-    Center(child: Text('Ressources')),
-    Center(child: Text('Groupes')),
-    Center(child: Text('Séances')),
-    ProfileScreen(),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _seances.load();
+  }
 
-  final List<(IconData, String)> tabs = const [
+  @override
+  void dispose() {
+    _seances.dispose();
+    super.dispose();
+  }
+
+  static const tabs = <(IconData, String)>[
     (Icons.home, 'Accueil'),
     (Icons.menu_book, 'Ressources'),
     (Icons.groups, 'Groupes'),
@@ -561,6 +569,14 @@ class _ShellState extends State<Shell> {
 
   @override
   Widget build(BuildContext context) {
+    final pages = <Widget>[
+      const HomeScreen(),
+      const Center(child: Text('Ressources')),
+      const Center(child: Text('Groupes')),
+      SeancesPage(store: _seances),
+      const ProfileScreen(),
+    ];
+
     return Scaffold(
       extendBody: true,
       body: SafeArea(

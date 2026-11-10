@@ -1,0 +1,547 @@
+import 'package:flutter/material.dart';
+import 'package:studymate/features/availability/common_slots_page.dart';
+import 'package:studymate/features/calendar/agenda_page.dart';
+import 'package:studymate/features/conflicts/schedule_conflicts.dart';
+import 'package:studymate/features/meet/meet_manage_sheet.dart';
+import 'package:studymate/features/meet/meet_space.dart';
+import 'package:studymate/features/notifications/notifications_sheet.dart';
+import 'package:studymate/features/seances/models/seance.dart';
+import 'package:studymate/features/seances/proposer_seance_page.dart';
+import 'package:studymate/features/seances/seances_store.dart';
+import 'package:studymate/features/seances/widgets/seance_card.dart';
+import 'package:studymate/features/seances/widgets/study_header.dart';
+import 'package:studymate/theme/app_colors.dart';
+
+class SeancesPage extends StatelessWidget {
+  const SeancesPage({super.key, required this.store});
+
+  final SeancesStore store;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: store,
+      builder: (context, _) {
+        final sessions = store.items;
+        return ListView(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
+          children: [
+            StudyHeader(
+              initials: store.user.initials,
+              hasAlerts: store.alerts().isNotEmpty,
+              onBellTap: () =>
+                  showSeanceNotifications(context: context, store: store),
+            ),
+            const SizedBox(height: 26),
+            const Text(
+              'Tes prochaines séances',
+              style: TextStyle(
+                color: AppColors.text,
+                fontSize: 30,
+                height: 1.1,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.8,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Un rendez-vous avec ta progression.',
+              style: TextStyle(
+                color: AppColors.muted,
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Connecté en tant que ${store.user.displayName}',
+              style: const TextStyle(
+                color: AppColors.subtle,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 22),
+            _ProposeButton(onPressed: () => _openPropose(context)),
+            const SizedBox(height: 10),
+            _AgendaButton(onPressed: () => _openAgenda(context)),
+            const SizedBox(height: 16),
+            _FormatFilters(selected: store.format, onSelected: store.setFormat),
+            if (store.conflictCount > 0) ...[
+              const SizedBox(height: 14),
+              _ConflictSummary(count: store.conflictCount),
+            ],
+            const SizedBox(height: 18),
+            if (store.error != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 48),
+                child: Text(
+                  store.error!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: AppColors.muted,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              )
+            else if (store.loading)
+              const Padding(
+                padding: EdgeInsets.only(top: 48),
+                child: Center(
+                  child: Text(
+                    'Chargement des séances...',
+                    style: TextStyle(
+                      color: AppColors.muted,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              )
+            else if (sessions.isEmpty)
+              const _EmptySessions()
+            else
+              for (final seance in sessions) ...[
+                SeanceCard(
+                  seance: seance,
+                  isOwner: store.isOwner(seance),
+                  onReserve: () => _reserve(context, seance),
+                  onEdit: store.isOwner(seance)
+                      ? () => _openEdit(context, seance)
+                      : null,
+                  onDelete: store.isOwner(seance)
+                      ? () => _confirmDelete(context, seance)
+                      : null,
+                  onManageMeet:
+                      store.isOwner(seance) && isGoogleMeetLink(seance.place)
+                      ? () => _manageMeet(context, seance)
+                      : null,
+                  onToggleCalendar: store.canSyncCalendar(seance)
+                      ? () => _toggleCalendar(context, seance)
+                      : null,
+                  calendarBusy: store.isCalendarBusy(seance.id),
+                  onFindSlots: store.isOwner(seance)
+                      ? () => _openSlots(context, seance)
+                      : null,
+                  conflicts: store.conflictsOf(seance.id),
+                  unavailable: store.unavailableFor(seance.id),
+                ),
+                const SizedBox(height: 14),
+              ],
+            const SizedBox(height: 6),
+            _DemoDataBar(
+              hasDemo: store.hasDemoData,
+              onLoad: () => _loadDemo(context),
+              onClear: () => _clearDemo(context),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _openPropose(BuildContext context) async {
+    final created = await Navigator.of(context).push<Seance>(
+      MaterialPageRoute(
+        builder: (_) => ProposerSeancePage(
+          currentUser: store.user,
+          conflictsFor: store.conflictsFor,
+        ),
+      ),
+    );
+    if (created != null) {
+      final saved = await store.add(created);
+      if (!saved && context.mounted) {
+        _showDenied(context, 'Impossible de publier cette séance.');
+      }
+    }
+  }
+
+  Future<void> _openSlots(BuildContext context, Seance seance) {
+    return Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => CommonSlotsPage(store: store, seance: seance),
+      ),
+    );
+  }
+
+  Future<void> _loadDemo(BuildContext context) async {
+    final ok = await store.loadDemoData();
+    if (!context.mounted) return;
+    _showDenied(
+      context,
+      ok
+          ? '5 séances d\'exemple ajoutées. Ouvre le menu ⋯ d\'une séance, '
+                'puis « Trouver un créneau commun ».'
+          : 'Connecte-toi pour charger les exemples.',
+    );
+  }
+
+  Future<void> _clearDemo(BuildContext context) async {
+    await store.clearDemoData();
+    if (!context.mounted) return;
+    _showDenied(context, 'Séances d\'exemple supprimées.');
+  }
+
+  Future<void> _openAgenda(BuildContext context) {
+    return Navigator.of(context).push<void>(
+      MaterialPageRoute(builder: (_) => AgendaPage(store: store)),
+    );
+  }
+
+  Future<void> _openEdit(BuildContext context, Seance seance) async {
+    if (!store.isOwner(seance)) {
+      _showDenied(context, 'Tu ne peux modifier que tes propres séances.');
+      return;
+    }
+    final updated = await Navigator.of(context).push<Seance>(
+      MaterialPageRoute(
+        builder: (_) => ProposerSeancePage(
+          currentUser: store.user,
+          seance: seance,
+          conflictsFor: store.conflictsFor,
+        ),
+      ),
+    );
+    if (updated != null) {
+      final saved = await store.update(updated);
+      if (!saved && context.mounted) {
+        _showDenied(context, 'Tu ne peux modifier que tes propres séances.');
+      }
+      if (context.mounted) _showCalendarWarning(context);
+    }
+  }
+
+  Future<void> _reserve(BuildContext context, Seance seance) async {
+    // Avant de réserver, prévenir si la séance tombe sur une autre des miennes.
+    if (!seance.reserved && !store.isOwner(seance)) {
+      final conflicts = store.conflictsFor(seance);
+      if (conflicts.isNotEmpty) {
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Conflit d\'horaire'),
+            content: Text(
+              '« ${seance.title} » chevauche '
+              '${conflicts.map(describeSeanceSlot).join(' et ')}.\n\n'
+              'Réserver quand même ?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Annuler'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Réserver quand même'),
+              ),
+            ],
+          ),
+        );
+        if (confirmed != true) return;
+      }
+    }
+    await store.toggleReservation(seance.id);
+    if (context.mounted) _showCalendarWarning(context);
+  }
+
+  Future<void> _toggleCalendar(BuildContext context, Seance seance) async {
+    final result = await store.toggleCalendar(seance.id);
+    if (!context.mounted) return;
+    _showDenied(context, result.message);
+  }
+
+  /// Signale un échec de Google Agenda survenu après une action déjà réussie.
+  void _showCalendarWarning(BuildContext context) {
+    final warning = store.takeCalendarWarning();
+    if (warning != null) _showDenied(context, warning);
+  }
+
+  Future<void> _manageMeet(BuildContext context, Seance seance) async {
+    if (!store.isOwner(seance)) {
+      _showDenied(context, 'Tu ne peux gérer que le Meet de tes séances.');
+      return;
+    }
+    await showMeetManager(
+      context: context,
+      seance: seance,
+      onSave: store.update,
+    );
+    if (context.mounted) _showCalendarWarning(context);
+  }
+
+  Future<void> _confirmDelete(BuildContext context, Seance seance) async {
+    if (!store.isOwner(seance)) {
+      _showDenied(context, 'Tu ne peux supprimer que tes propres séances.');
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Supprimer la séance'),
+          content: Text('Supprimer « ${seance.title} » ?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Annuler'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Supprimer'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirmed == true) {
+      final deleted = await store.delete(seance.id);
+      if (!deleted && context.mounted) {
+        _showDenied(context, 'Tu ne peux supprimer que tes propres séances.');
+      }
+      if (context.mounted) _showCalendarWarning(context);
+    }
+  }
+
+  void _showDenied(BuildContext context, String message) {
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+  }
+}
+
+class _ConflictSummary extends StatelessWidget {
+  const _ConflictSummary({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFE9E6),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.warning_amber_rounded, color: Color(0xFFC62828)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              '$count de tes séances sont en conflit d\'horaire. '
+              'Elles sont signalées ci-dessous.',
+              style: const TextStyle(
+                color: AppColors.text,
+                fontSize: 13.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DemoDataBar extends StatelessWidget {
+  const _DemoDataBar({
+    required this.hasDemo,
+    required this.onLoad,
+    required this.onClear,
+  });
+
+  final bool hasDemo;
+  final VoidCallback onLoad;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      child: TextButton.icon(
+        onPressed: hasDemo ? onClear : onLoad,
+        icon: Icon(
+          hasDemo ? Icons.delete_outline_rounded : Icons.science_outlined,
+          size: 18,
+        ),
+        label: Text(
+          hasDemo
+              ? 'Supprimer les séances d\'exemple'
+              : 'Charger des séances d\'exemple (test)',
+        ),
+      ),
+    );
+  }
+}
+
+class _AgendaButton extends StatelessWidget {
+  const _AgendaButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 50,
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        onPressed: onPressed,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.primary,
+          backgroundColor: Colors.white,
+          side: const BorderSide(color: AppColors.primarySoft, width: 1.5),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+          textStyle: const TextStyle(
+            fontSize: 15.5,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -0.2,
+          ),
+        ),
+        icon: const Icon(Icons.calendar_month_rounded, size: 20),
+        label: const Text('Mon agenda Google'),
+      ),
+    );
+  }
+}
+
+class _ProposeButton extends StatelessWidget {
+  const _ProposeButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 54,
+      width: double.infinity,
+      child: FilledButton.icon(
+        onPressed: onPressed,
+        style: FilledButton.styleFrom(
+          backgroundColor: AppColors.primary,
+          foregroundColor: Colors.white,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+          textStyle: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -0.2,
+          ),
+        ),
+        icon: const Icon(Icons.add_rounded, size: 22),
+        label: const Text('Proposer une séance'),
+      ),
+    );
+  }
+}
+
+class _FormatFilters extends StatelessWidget {
+  const _FormatFilters({required this.selected, required this.onSelected});
+
+  final SessionFormat? selected;
+  final ValueChanged<SessionFormat?> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          _FilterChip(
+            label: 'Toutes',
+            icon: Icons.calendar_month_outlined,
+            active: selected == null,
+            onTap: () => onSelected(null),
+          ),
+          const SizedBox(width: 10),
+          _FilterChip(
+            label: 'En ligne',
+            icon: Icons.videocam_outlined,
+            active: selected == SessionFormat.online,
+            onTap: () => onSelected(SessionFormat.online),
+          ),
+          const SizedBox(width: 10),
+          _FilterChip(
+            label: 'Présentiel',
+            icon: Icons.location_on_outlined,
+            active: selected == SessionFormat.inPerson,
+            onTap: () => onSelected(SessionFormat.inPerson),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FilterChip extends StatelessWidget {
+  const _FilterChip({
+    required this.label,
+    required this.icon,
+    required this.active,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = active ? Colors.white : const Color(0xFF8A8498);
+    return Material(
+      color: active ? AppColors.primary : Colors.white,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: active ? null : Border.all(color: AppColors.line),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, size: 18, color: color),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: TextStyle(
+                  color: color,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14.5,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _EmptySessions extends StatelessWidget {
+  const _EmptySessions();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.only(top: 48),
+      child: Column(
+        children: [
+          Icon(Icons.event_busy_outlined, color: AppColors.subtle, size: 36),
+          SizedBox(height: 10),
+          Text(
+            'Aucune séance pour ce filtre.',
+            style: TextStyle(
+              color: AppColors.muted,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
