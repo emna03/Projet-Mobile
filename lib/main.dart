@@ -21,10 +21,14 @@ import 'features/groups/viewmodels/group_viewmodel.dart';
 import 'features/groups/views/groups_list_page.dart';
 import 'features/groups/widgets/join_requests_sheet.dart';
 import 'features/home/views/home_screen.dart';
+import 'features/meet/google_meet_auth.dart';
+import 'features/notifications/seance_reminders.dart';
 import 'features/resources/models/resource.dart';
 import 'features/resources/views/resource_detail_page.dart';
 import 'features/resources/views/resource_form_page.dart';
 import 'features/resources/views/resources_page.dart';
+import 'features/seances/seances_page.dart';
+import 'features/seances/seances_store.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -35,7 +39,9 @@ Future<void> main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  await GoogleSignIn.instance.initialize();
+  // Google Sign-In ne s'initialise qu'une fois : GoogleMeetAuth le fait avec
+  // l'identifiant client serveur dont Google Meet et Google Agenda ont besoin.
+  await GoogleMeetAuth.instance.ensureInitialized();
 
   // Modules partagés (groupes ↔ ressources), liés à la session Firebase.
   initAppServices();
@@ -587,12 +593,15 @@ class Shell extends StatefulWidget {
 class _ShellState extends State<Shell> {
   late int index = widget.initial;
 
-  final List<Widget> pages = [
+  // Séances de révision : stockage local, rappels sur le téléphone.
+  final _seances = SeancesStore(reminders: seanceReminders);
+
+  late final List<Widget> pages = [
     const HomeScreen(),
     const ResourcesPage(),
     // Module Groupes + Chat (même utilisateur Firebase que le reste).
     GroupsListPage(viewModel: groupViewModel, bottomInset: 84),
-    const Center(child: Text('Séances')),
+    SeancesPage(store: _seances),
     const ProfileScreen(),
   ];
 
@@ -612,11 +621,13 @@ class _ShellState extends State<Shell> {
     // Notifications en temps réel : nouvelle demande d'adhésion reçue,
     // demande acceptée / refusée.
     _noticeSub = groupViewModel.notices.listen(_showNotice);
+    _seances.load();
   }
 
   @override
   void dispose() {
     _noticeSub?.cancel();
+    _seances.dispose();
     super.dispose();
   }
 
